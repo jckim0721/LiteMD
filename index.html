@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>제목 없음 — LiteMD</title>
+<style>
+:root { color-scheme: light dark; --bg: #fbfbfa; --fg: #1f2328; --muted: #6e7781; --line: #e4e4e1; --accent: #0969da; }
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #16181c; --fg: #e6edf3; --muted: #8b949e; --line: #2b2f36; --accent: #4493f8; }
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg);
+  font: 14px/1.5 system-ui, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
+header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+#name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#name.dirty::before { content: "• "; color: var(--accent); }
+button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px;
+  padding: 2px 10px; cursor: pointer; }
+button:hover { border-color: var(--muted); }
+textarea { flex: 1; display: block; width: 100%; max-width: 48rem; margin: 0 auto; padding: 24px 16px 40vh;
+  border: 0; outline: 0; resize: none; background: none; color: inherit; tab-size: 2;
+  font: 16px/1.7 "Cascadia Mono", Consolas, "D2Coding", ui-monospace, "Malgun Gothic", monospace; }
+textarea::placeholder { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <span id="name">제목 없음</span>
+  <button id="open" type="button" title="열기 (Ctrl+O)">열기</button>
+  <button id="save" type="button" title="저장 (Ctrl+S) · Shift+클릭은 다른 이름으로 (크롬은 Ctrl+Shift+S도)">저장</button>
+</header>
+<textarea id="ed" aria-label="편집창" spellcheck="false" autocomplete="off" autocapitalize="off" autofocus
+  placeholder="여기에 쓰세요.&#10;&#10;Ctrl+O 열기 · Ctrl+S 저장 · Enter 목록 이어쓰기 · Tab 들여쓰기"></textarea>
+<input id="file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
+
+<script id="logic">
+// 순수 함수 — DOM을 쓰지 않는다. tests/logic.test.mjs가 이 블록만 떼어 Node에서 돌린다.
+// 오프셋은 textarea selectionStart와 같은 UTF-16 단위다.
+
+// 줄 앞 공백 · 글머리표(- * +) 또는 번호(1. 1)) · 공백 · (있으면) 할 일 칸 [ ] [x]
+const LIST_RE = /^([ \t]*)(?:([-*+])|(\d{1,9})([.)]))([ \t]+)(\[[ xX]\](?:[ \t]+|$))?/;
+// 수평선(- - - · *** · ___)은 목록으로 보지 않는다
+const HR_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+
+function parseItem(line) {
+  if (HR_RE.test(line)) return null;
+  const m = LIST_RE.exec(line);
+  if (!m) return null;
+  return { indent: m[1], bullet: m[2] || '', num: m[3] || '', delim: m[4] || '', space: m[5], box: m[6] || '', end: m[0].length };
+}
+
+function lineStartOf(text, pos) {
+  return pos <= 0 ? 0 : text.lastIndexOf('\n', pos - 1) + 1;
+}
+
+function lineEndOf(text, pos) {
+  const i = text.indexOf('\n', pos);
+  return i < 0 ? text.length : i;
+}
+
+// 줄 앞에서 한 번에 지울 칸 수: 탭 1개 또는 공백 최대 2칸
+function outdentWidth(line) {
+  if (line[0] === '\t') return 1;
+  let n = 0;
+  while (n < 2 && line[n] === ' ') n++;
+  return n;
+}
+
+function listEnter(text, s, e) {
+  const ls = lineStartOf(text, s);
+  const line = text.slice(ls, lineEndOf(text, s));
+  const it = parseItem(line);
+  if (!it || s - ls < it.end) return null;
+  if (s === e && line.slice(it.end).trim() === '') {
+    // 빈 항목: 들여쓴 항목은 한 단계 내어쓰고, 최상위 항목은 기호를 지워 목록을 끝낸다
+    const n = it.indent ? outdentWidth(line) : line.length;
+    const at = it.indent ? s - n : ls;
+    return { from: ls, to: ls + n, insert: '', selStart: at, selEnd: at };
+  }
+  const marker = it.bullet || (Number(it.num) + 1) + it.delim;
+  const prefix = '\n' + it.indent + marker + it.space + (it.box ? '[ ] ' : '');
+  const at = s + prefix.length;
+  return { from: s, to: e, insert: prefix, selStart: at, selEnd: at };
+}
+
+// 선택이 걸친 줄 범위. 선택이 다음 줄 맨 앞에서 끝나면 그 줄은 뺀다.
+function lineSpan(text, s, e) {
+  const last = e > s && lineStartOf(text, e) === e ? e - 1 : e;
+  return { from: lineStartOf(text, s), to: lineEndOf(text, last) };
+}
+
+// 줄마다 fn을 적용하고, 줄 앞에서 늘거나 준 칸만큼 선택 위치를 보정한다. 바뀐 줄이 없으면 null.
+function mapLines(text, s, e, fn) {
+  const { from, to } = lineSpan(text, s, e);
+  const lines = text.slice(from, to).split('\n');
+  const shifts = []; // [원래 글에서 줄 시작 위치, 늘어난 칸 수(지웠으면 음수)]
+  let at = from;
+  const out = lines.map(line => {
+    const next = fn(line, lines.length);
+    shifts.push([at, next.length - line.length]);
+    at += line.length + 1;
+    return next;
+  });
+  if (shifts.every(([, d]) => d === 0)) return null;
+  const move = p => {
+    let q = p;
+    for (const [start, d] of shifts) {
+      if (start > p) break;
+      q += d > 0 ? d : -Math.min(-d, p - start); // 지운 칸 안에 있던 위치는 줄 맨 앞으로
+    }
+    return q;
+  };
+  return { from, to, insert: out.join('\n'), selStart: move(s), selEnd: move(e) };
+}
+
+function indentLines(text, s, e) {
+  return mapLines(text, s, e, (line, count) => (count > 1 && line === '' ? line : '  ' + line));
+}
+
+function outdentLines(text, s, e) {
+  return mapLines(text, s, e, line => line.slice(outdentWidth(line)));
+}
+
+// 앞뒤 공통 글자를 잘라 실제로 바뀐 부분만 남긴다(Ctrl+Z 뒤 커서가 덜 튄다). 서로게이트 쌍은 쪼개지 않는다.
+function trimEdit(text, ed) {
+  const old = text.slice(ed.from, ed.to), ins = ed.insert;
+  let a = 0;
+  while (a < old.length && a < ins.length && old[a] === ins[a]) a++;
+  if (a && /[\uD800-\uDBFF]/.test(old[a - 1])) a--;
+  let b = 0;
+  while (b < old.length - a && b < ins.length - a && old[old.length - 1 - b] === ins[ins.length - 1 - b]) b++;
+  if (b && /[\uDC00-\uDFFF]/.test(old[old.length - b])) b--;
+  return { ...ed, from: ed.from + a, to: ed.to - b, insert: ins.slice(a, ins.length - b) };
+}
+
+function detectEol(raw) {
+  return raw.includes('\r\n') ? '\r\n' : '\n';
+}
+
+function normalizeEol(raw) {
+  return raw.replace(/\r\n?/g, '\n');
+}
+
+function toEol(text, eol) {
+  return eol === '\n' ? text : text.replace(/\n/g, eol);
+}
+
+// 단축키 글자. 라틴 글자면 key를 쓰고(드보락 등), 한글 입력 모드처럼 아니면 물리 키(code)로 읽는다.
+function shortcutKey(key, code) {
+  if (/^[a-z]$/i.test(key)) return key.toLowerCase();
+  return /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : '';
+}
+</script>
+
+<script>
+// 화면 — 편집창, 파일 입출력, 단축키
+const ta = document.getElementById('ed');
+const nameEl = document.getElementById('name');
+const picker = document.getElementById('file');
+const UNTITLED = '제목 없음';
+const TYPES = [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }];
+let doc = { handle: null, name: '', saved: '', eol: '\n' };
+
+function isDirty() {
+  return ta.value !== doc.saved;
+}
+
+function refresh() {
+  const dirty = isDirty(), name = doc.name || UNTITLED;
+  nameEl.textContent = name;
+  nameEl.classList.toggle('dirty', dirty);
+  document.title = (dirty ? '• ' : '') + name + ' — LiteMD';
+}
+
+// 글 바꾸기는 전부 여기로. execCommand라야 Ctrl+Z 기록이 남는다(value 대입은 기록을 지운다).
+function applyEdit(ed) {
+  ed = trimEdit(ta.value, ed);
+  ta.focus();
+  ta.setSelectionRange(ed.from, ed.to);
+  const ok = ed.insert ? document.execCommand('insertText', false, ed.insert)
+    : ed.from === ed.to || document.execCommand('delete');
+  if (!ok) {
+    ta.setRangeText(ed.insert, ed.from, ed.to); // Ctrl+Z는 포기하고 값만 바꾼다
+    refresh();
+  }
+  ta.setSelectionRange(ed.selStart, ed.selEnd);
+}
+
+function load(handle, name, raw) {
+  doc = { handle, name, saved: normalizeEol(raw), eol: detectEol(raw) };
+  ta.value = doc.saved; // 다른 파일이니 Ctrl+Z 기록이 지워지는 게 맞다
+  ta.setSelectionRange(0, 0);
+  ta.scrollTop = 0;
+  ta.focus();
+  refresh();
+}
+
+async function openFile() {
+  if (isDirty() && !confirm('저장하지 않은 변경이 있어요. 버리고 열까요?')) return;
+  if (!window.showOpenFilePicker) return picker.click();
+  try {
+    const [handle] = await window.showOpenFilePicker({ types: TYPES });
+    const file = await handle.getFile();
+    load(handle, file.name, await file.text());
+  } catch (err) {
+    if (err.name !== 'AbortError') alert('열지 못했어요: ' + err.message);
+  }
+}
+
+picker.addEventListener('change', async () => {
+  const file = picker.files[0];
+  picker.value = ''; // 같은 파일을 다시 고를 수 있게
+  if (file) load(null, file.name, await file.text());
+});
+
+async function write(handle, text) {
+  const w = await handle.createWritable();
+  await w.write(text);
+  await w.close();
+}
+
+function download(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/markdown;charset=utf-8' }));
+  a.download = name;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+}
+
+async function save(as) {
+  const snapshot = ta.value; // 쓰는 동안 친 글은 '수정됨'으로 남도록 시작 시점 내용을 기록한다
+  const text = toEol(snapshot, doc.eol);
+  try {
+    if (doc.handle && !as) {
+      await write(doc.handle, text);
+    } else if (window.showSaveFilePicker) {
+      const handle = await window.showSaveFilePicker({ suggestedName: doc.name || UNTITLED + '.md', types: TYPES });
+      await write(handle, text);
+      doc.handle = handle;
+      doc.name = handle.name;
+    } else {
+      doc.name = doc.name || UNTITLED + '.md';
+      download(doc.name, text);
+    }
+    doc.saved = snapshot;
+    refresh();
+  } catch (err) {
+    if (err.name !== 'AbortError') alert('저장하지 못했어요: ' + err.message);
+  }
+}
+
+ta.addEventListener('keydown', e => {
+  if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중: 가로채면 마지막 글자가 겹친다
+  if (e.ctrlKey || e.altKey || e.metaKey) return;
+  let ed = null;
+  if (e.key === 'Enter' && !e.shiftKey) {
+    ed = listEnter(ta.value, ta.selectionStart, ta.selectionEnd);
+  } else if (e.key === 'Tab') {
+    e.preventDefault(); // 포커스가 편집창 밖으로 나가지 않게
+    ed = (e.shiftKey ? outdentLines : indentLines)(ta.value, ta.selectionStart, ta.selectionEnd);
+  }
+  if (ed) {
+    e.preventDefault();
+    applyEdit(ed);
+  }
+});
+ta.addEventListener('input', refresh);
+
+addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+  const k = shortcutKey(e.key, e.code);
+  if (k !== 'o' && k !== 's') return;
+  e.preventDefault();
+  if (k === 'o') openFile();
+  else save(e.shiftKey);
+});
+
+addEventListener('beforeunload', e => {
+  if (!isDirty()) return;
+  e.preventDefault();
+  e.returnValue = '';
+});
+
+document.getElementById('open').addEventListener('click', openFile);
+document.getElementById('save').addEventListener('click', e => save(e.shiftKey));
+for (const button of document.querySelectorAll('header button')) {
+  button.addEventListener('mousedown', e => e.preventDefault()); // 눌러도 편집창 포커스·커서가 그대로
+}
+refresh();
+ta.focus(); // autofocus를 건너뛰는 환경(headless 크롬 등)이 있어서 한 번 더
+</script>
+</body>
+</html>
