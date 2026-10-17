@@ -322,6 +322,46 @@ for (const [label, exe] of BROWSERS) {
       assert.equal(await b.eval(`!!document.querySelector('.cm-search')`), false);
     });
 
+    // 사용자가 다크 모드에서 찾은 버그(10/18): 검색칸·버튼이 밝은 바탕에 밝은 글자라 안 보였다
+    for (const scheme of ['light', 'dark']) {
+      test(`F09 검색 패널 글자가 배경과 구분된다(${scheme}, 대비 4.5:1 이상)`, async t => {
+        await b.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+        await setDoc('▮본문');
+        await b.press('f', { ctrl: true });
+        await b.waitFor(`!!document.querySelector('.cm-search input[main-field]')`);
+        await b.typeKeys('abc');
+        const ratios = await b.eval(`(() => {
+          const rgb = s => s.match(/[\\d.]+/g).map(Number);
+          const lum = c => {
+            const f = v => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+            return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+          };
+          // 실제로 칠해진 배경: 투명이면 부모로 올라간다. 그라데이션이면 셀 수 없으니 실패로 본다
+          const bgOf = el => {
+            for (; el; el = el.parentElement) {
+              const s = getComputedStyle(el);
+              if (s.backgroundImage !== 'none') return null;
+              const c = rgb(s.backgroundColor);
+              if (c.length < 4 || c[3] > 0) return c;
+            }
+            return [255, 255, 255];
+          };
+          const ratio = el => {
+            const bg = bgOf(el);
+            if (!bg) return 0;
+            const [hi, lo] = [lum(rgb(getComputedStyle(el).color)), lum(bg)].sort((x, y) => y - x);
+            return Math.round(((hi + 0.05) / (lo + 0.05)) * 10) / 10;
+          };
+          return [...document.querySelectorAll('.cm-search .cm-textfield, .cm-search .cm-button, .cm-search label')]
+            .map(el => [(el.name || el.textContent || el.className).trim(), ratio(el)]);
+        })()`);
+        await b.press('Escape');
+        await b.send('Emulation.setEmulatedMedia', { features: [] });
+        t.diagnostic(JSON.stringify(ratios));
+        assert.deepEqual(ratios.filter(([, r]) => r < 4.5), []);
+      });
+    }
+
     // ── 폴더 탐색기(X) ──
 
     // 가짜 폴더: 숨길 것(.obsidian, 사진.png)과 정렬을 확인할 이름들. stubFiles() 다음에 부른다

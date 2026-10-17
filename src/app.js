@@ -91,6 +91,17 @@ const theme = EditorView.theme({
   '.cm-placeholder': { color: 'var(--muted)' },
   '.cm-panels': { backgroundColor: 'var(--bg)', color: 'var(--fg)' },
   '.cm-panels.cm-panels-bottom': { borderTop: '1px solid var(--line)' },
+  // 검색 패널의 입력칸·버튼: CodeMirror 기본 스타일은 '다크 테마로 선언된' 편집기에서만 어두워진다.
+  // 여기선 색을 CSS 변수로 바꾸니 기본값(흰 칸·밝은 그라데이션)을 덮어야 다크 모드에서 글자가 보인다
+  '.cm-textfield': {
+    backgroundColor: 'var(--bg)', color: 'var(--fg)', border: '1px solid var(--line)', borderRadius: '4px',
+  },
+  '.cm-textfield:focus': { outline: 'none', borderColor: 'var(--accent)' },
+  '.cm-button': {
+    backgroundImage: 'none', backgroundColor: 'var(--code)', color: 'var(--fg)', border: '1px solid var(--line)', borderRadius: '4px',
+  },
+  '.cm-button:active': { backgroundImage: 'none', backgroundColor: 'var(--line)' },
+  '.cm-panel.cm-search [name=close]': { color: 'var(--muted)' },
   '.cm-searchMatch': { backgroundColor: 'var(--match)' },
   '.cm-searchMatch-selected': { backgroundColor: 'var(--accent)', color: 'var(--bg)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'var(--select)' },
