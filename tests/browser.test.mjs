@@ -27,6 +27,23 @@ for (const [label, exe] of BROWSERS) {
       // keydown 기록기 — 앱 핸들러가 끝난 뒤(버블 단계, window)의 상태를 본다
       await b.eval(`window.__keys = []; addEventListener('keydown', e =>
         __keys.push({ key: e.key, keyCode: e.keyCode, isComposing: e.isComposing, prevented: e.defaultPrevented })); 0`);
+      // 글자·배경 대비(WCAG). 투명 배경이면 부모로 올라가고, 그라데이션이면 0(잴 수 없음 = 실패로 본다)
+      await b.eval(`window.__ratio = el => {
+        const rgb = s => s.match(/[\\d.]+/g).map(Number);
+        const lum = c => {
+          const f = v => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
+          return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
+        };
+        let bg = [255, 255, 255];
+        for (let p = el; p; p = p.parentElement) {
+          const s = getComputedStyle(p);
+          if (s.backgroundImage !== 'none') return 0;
+          const c = rgb(s.backgroundColor);
+          if (c.length < 4 || c[3] > 0) { bg = c; break; }
+        }
+        const [hi, lo] = [lum(rgb(getComputedStyle(el).color)), lum(bg)].sort((x, y) => y - x);
+        return Math.round(((hi + 0.05) / (lo + 0.05)) * 10) / 10;
+      }; 0`);
     });
     after(() => b?.close());
 
@@ -349,37 +366,120 @@ for (const [label, exe] of BROWSERS) {
         await b.press('f', { ctrl: true });
         await b.waitFor(`!!document.querySelector('.cm-search input[main-field]')`);
         await b.typeKeys('abc');
-        const ratios = await b.eval(`(() => {
-          const rgb = s => s.match(/[\\d.]+/g).map(Number);
-          const lum = c => {
-            const f = v => ((v /= 255) <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4);
-            return 0.2126 * f(c[0]) + 0.7152 * f(c[1]) + 0.0722 * f(c[2]);
-          };
-          // 실제로 칠해진 배경: 투명이면 부모로 올라간다. 그라데이션이면 셀 수 없으니 실패로 본다
-          const bgOf = el => {
-            for (; el; el = el.parentElement) {
-              const s = getComputedStyle(el);
-              if (s.backgroundImage !== 'none') return null;
-              const c = rgb(s.backgroundColor);
-              if (c.length < 4 || c[3] > 0) return c;
-            }
-            return [255, 255, 255];
-          };
-          const ratio = el => {
-            const bg = bgOf(el);
-            if (!bg) return 0;
-            const [hi, lo] = [lum(rgb(getComputedStyle(el).color)), lum(bg)].sort((x, y) => y - x);
-            return Math.round(((hi + 0.05) / (lo + 0.05)) * 10) / 10;
-          };
-          return [...document.querySelectorAll('.cm-search .cm-textfield, .cm-search .cm-button, .cm-search label')]
-            .map(el => [(el.name || el.textContent || el.className).trim(), ratio(el)]);
-        })()`);
+        const ratios = await b.eval(`[...document.querySelectorAll('.cm-search .cm-textfield, .cm-search .cm-button, .cm-search label')]
+          .map(el => [(el.name || el.textContent || el.className).trim(), __ratio(el)])`);
         await b.press('Escape');
         await b.send('Emulation.setEmulatedMedia', { features: [] });
         t.diagnostic(JSON.stringify(ratios));
         assert.deepEqual(ratios.filter(([, r]) => r < 4.5), []);
       });
     }
+
+    // ── 라이브·읽기 프리뷰(P) ──
+
+    const lineTexts = () => b.eval(`[...document.querySelectorAll('.cm-content .cm-line')].map(l => l.textContent)`);
+    const toggleReading = () => b.press('e', { ctrl: true });
+
+    test('P01 라이브: 커서 없는 줄은 기호가 숨고, 커서가 들어가면 원문', async () => {
+      await setDoc('# 제목⏎**굵게** 글⏎▮');
+      assert.deepEqual((await lineTexts()).slice(0, 2), ['제목', '굵게 글']);
+      await b.eval('lite.view.dispatch({ selection: { anchor: 3 } })');
+      assert.deepEqual((await lineTexts()).slice(0, 2), ['# 제목', '굵게 글']);
+    });
+
+    test('P02 체크박스를 누르면 [ ]↔[x], Ctrl+Z로 되돌린다', async () => {
+      await setDoc('- [ ] 할 일⏎▮');
+      await b.click('.cm-lp-task');
+      assert.equal(await value(), '- [x] 할 일\n');
+      assert.equal(await b.eval(`document.title.startsWith('•')`), true);
+      await b.press('z', { ctrl: true });
+      assert.equal(await value(), '- [ ] 할 일\n');
+    });
+
+    test('P03 꾸민 줄에서 한글 조합: 커서 줄은 원문이라 겹침 없이 이어쓰고, 떠난 줄은 꾸며진다', async () => {
+      await setDoc('- **굵게** 기저▮');
+      await b.send('Input.imeSetComposition', { text: '귀', selectionStart: 1, selectionEnd: 1 });
+      await b.press('Process');
+      await type('귀');
+      await b.press('Enter');
+      assert.equal(await screen(), '- **굵게** 기저귀⏎- ▮');
+      assert.equal((await lineTexts())[0], '• 굵게 기저귀');
+    });
+
+    test('P04 [라이브]를 끄면 전부 원문, 다시 켜면 꾸밈', async () => {
+      await setDoc('# 제목⏎▮');
+      await b.click('#live');
+      assert.equal((await lineTexts())[0], '# 제목');
+      assert.equal(await b.eval(`document.getElementById('live').getAttribute('aria-pressed')`), 'false');
+      await b.click('#live');
+      assert.equal((await lineTexts())[0], '제목');
+    });
+
+    test('P05 Ctrl+E: 읽기 화면(제목·할 일·표), 다시 Ctrl+E면 편집 화면으로', async () => {
+      await setDoc('# 제목⏎⏎- [x] 끝⏎⏎| a | b |⏎|---|---|⏎| 1 | 2 |▮');
+      await toggleReading();
+      const r = await b.eval(`(() => {
+        const p = document.getElementById('preview');
+        return { shown: !p.hidden, editorHidden: document.getElementById('editor').hidden, h1: p.querySelector('h1').textContent,
+          cells: p.querySelectorAll('td').length, boxDisabled: p.querySelector('li.task input').disabled,
+          label: document.getElementById('read').textContent };
+      })()`);
+      assert.deepEqual(r, { shown: true, editorHidden: true, h1: '제목', cells: 2, boxDisabled: true, label: '편집' });
+      await toggleReading();
+      const back = await b.eval(`({ hidden: document.getElementById('preview').hidden,
+        focused: document.activeElement === lite.view.contentDOM, label: document.getElementById('read').textContent })`);
+      assert.deepEqual(back, { hidden: true, focused: true, label: '읽기' });
+    });
+
+    test('P06 읽기 화면은 HTML을 실행하지 않고 위험한 주소를 막는다', async () => {
+      await setDoc('[나쁜](javascript:alert(1)) <img src=x onerror="window.__xss=1">⏎▮');
+      await toggleReading();
+      await sleep(100);
+      const r = await b.eval(`(() => {
+        const p = document.getElementById('preview');
+        return { href: p.querySelector('a').getAttribute('href'), img: p.querySelector('img'),
+          shownAsText: p.textContent.includes('<img'), xss: window.__xss || 0 };
+      })()`);
+      await toggleReading();
+      assert.deepEqual(r, { href: '#', img: null, shownAsText: true, xss: 0 });
+    });
+
+    test('P07 라이브에서 링크는 Ctrl+클릭으로만 새 탭으로 열린다', async () => {
+      await setDoc('[링크](https://a.b)⏎▮');
+      await b.eval(`window.__opened = []; window.open = u => (__opened.push(u), null); 0`);
+      const at = () => b.eval(`(() => { const r = lite.view.coordsAtPos(2); return { x: r.left + 2, y: (r.top + r.bottom) / 2 }; })()`);
+      let p = await at();
+      await b.clickAt(p.x, p.y); // 그냥 클릭은 편집: 커서만 들어간다
+      const plain = await b.eval('__opened.length');
+      await b.eval('lite.view.dispatch({ selection: { anchor: lite.view.state.doc.length } })');
+      p = await at();
+      await b.clickAt(p.x, p.y, { ctrl: true });
+      assert.deepEqual({ plain, opened: await b.eval('__opened') }, { plain: 0, opened: ['https://a.b'] });
+    });
+
+    for (const scheme of ['light', 'dark']) {
+      test(`P08 읽기 화면 글자 대비(${scheme}) 4.5:1 이상`, async t => {
+        await b.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+        await setDoc('# 제목⏎⏎본문 [링크](https://a.b) `코드`⏎⏎> 인용⏎⏎| a |⏎|---|⏎| 1 |▮');
+        await toggleReading();
+        const ratios = await b.eval(`[...document.querySelectorAll('#preview h1, #preview p, #preview a, #preview code, #preview blockquote, #preview td')]
+          .map(el => [el.tagName, __ratio(el)])`);
+        await toggleReading();
+        await b.send('Emulation.setEmulatedMedia', { features: [] });
+        t.diagnostic(JSON.stringify(ratios));
+        assert.deepEqual(ratios.filter(([, r]) => r < 4.5), []);
+      });
+    }
+
+    test('P09 읽기 화면에서도 Ctrl+S는 저장', async () => {
+      await setDoc('읽는 중▮');
+      await stubFiles();
+      await toggleReading();
+      await b.press('s', { ctrl: true });
+      await b.waitFor('__fs.writes.length === 1');
+      await toggleReading();
+      assert.equal(await b.eval('__fs.writes[0].text'), '읽는 중');
+    });
 
     // ── 폴더 탐색기(X) ──
 

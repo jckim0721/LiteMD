@@ -16,6 +16,7 @@ const KEYS = {
   s: { key: 's', code: 'KeyS', vk: 83 },
   'ㄴ': { key: 'ㄴ', code: 'KeyS', vk: 83 }, // 한글 입력 모드에서 S 자리
   f: { key: 'f', code: 'KeyF', vk: 70 },
+  e: { key: 'e', code: 'KeyE', vk: 69 },
   '{': { key: '{', code: 'BracketLeft', vk: 219 }, // 실제 키보드에서 Shift+[ 는 key가 '{'로 온다
   '}': { key: '}', code: 'BracketRight', vk: 221 },
   Escape: { key: 'Escape', code: 'Escape', vk: 27 },

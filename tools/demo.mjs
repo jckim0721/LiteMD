@@ -111,27 +111,28 @@ try {
   await shot();
   await b.click('[data-path="/10월 회고.md"]');
   await b.waitFor('lite.doc.path === "/10월 회고.md"');
-  await shot();
+  // 커서를 문서 끝에 두면 다른 줄은 다 라이브 프리뷰로 보인다
+  await b.eval('lite.view.dispatch({ selection: { anchor: lite.view.state.doc.length } })');
+  await shot(1400);
   // '- [ ] GitHub 공개' 끝에서 Enter → 할 일이 이어진다
   await b.eval(`lite.view.dispatch({ selection: { anchor: lite.view.state.doc.toString().indexOf('GitHub 공개') + 9 } })`);
   await b.press('Enter');
-  await shot();
   await b.send('Input.insertText', { text: 'README 데모' });
   await shot();
-  await b.press('Enter');
-  await b.press('Tab');
+  await b.eval('lite.view.dispatch({ selection: { anchor: lite.view.state.doc.length } })');
   await shot();
-  await b.send('Input.insertText', { text: '움직이는 PNG로' });
-  await shot();
-  await b.press('Enter'); // 빈 하위 항목
-  await b.press('Enter'); // → 한 단계 내어쓰기
-  await shot();
-  await b.press('Enter'); // → 목록 끝
-  await shot();
+  // 체크박스를 눌러 끝낸 일로
+  await b.eval(`(() => { const box = [...document.querySelectorAll('.cm-lp-task')][2]; box.scrollIntoView({ block: 'center' }); return 0; })()`);
+  const box = await b.eval(`(() => { const r = [...document.querySelectorAll('.cm-lp-task')][2].getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
+  await b.clickAt(box.x, box.y);
+  await shot(1200);
   await b.click('[data-level="2"]'); // H1·H2만 보이게
-  await shot(1600);
+  await shot(1400);
   await b.click('[data-level="0"]');
+  await b.press('e', { ctrl: true }); // 읽기 프리뷰
   await shot(2000);
+  await b.press('e', { ctrl: true });
+  await shot(1500);
   writeFileSync(out, apng(frames));
   writeFileSync(out.replace(/\.png$/, '-last.png'), frames.at(-1).png); // 마지막 장면 확인용(커밋 안 함)
   console.log(`저장: ${out} (${frames.length}장)`);

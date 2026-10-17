@@ -90,6 +90,70 @@ export const levelVectors = [
   { id: 'L03', n: 3, expect: 'a1x, b-x', note: 'H3 섹션만' },
 ];
 
+// v3 라이브 프리뷰 — 볼트 `LiteMD_v3_작업계획서` §6 LP 표와 같아야 한다.
+// expect: 줄마다 보이는 글을 ' ⏎ '로 이은 것. ☐·☑ = 체크박스, • = 글머리, ─── = 가로선
+export const liveVectors = [
+  { id: 'LP01', doc: '# 제목⏎본문▮', expect: '제목 ⏎ 본문', note: '커서 없는 줄의 헤딩 기호' },
+  { id: 'LP02', doc: '▮# 제목⏎본문', expect: '# 제목 ⏎ 본문', note: '커서 줄은 원문' },
+  { id: 'LP03', doc: '**굵게** 와 *기울임* ~~취소~~⏎▮', expect: '굵게 와 기울임 취소 ⏎ ', note: '강조 기호' },
+  { id: 'LP04', doc: '- [ ] 할 일⏎- [x] 끝⏎▮', expect: '☐ 할 일 ⏎ ☑ 끝 ⏎ ', note: '할 일' },
+  { id: 'LP05', doc: '- 사과⏎  - 배⏎▮', expect: '• 사과 ⏎   • 배 ⏎ ', note: '글머리표, 들여쓰기 유지' },
+  { id: 'LP06', doc: '[링크](https://a.b)⏎▮', expect: '링크 ⏎ ', note: '링크는 글만' },
+  { id: 'LP07', doc: '`코드` 글⏎▮', expect: '코드 글 ⏎ ', note: '인라인 코드' },
+  { id: 'LP08', doc: '> 인용⏎▮', expect: '인용 ⏎ ', note: '인용 기호' },
+  { id: 'LP09', doc: '---⏎▮', expect: '─── ⏎ ', note: '수평선' },
+  { id: 'LP10', doc: '1. 첫째⏎▮', expect: '1. 첫째 ⏎ ', note: '번호 목록은 그대로' },
+  { id: 'LP11', doc: '```⏎# 코드 속⏎```⏎▮', expect: '``` ⏎ # 코드 속 ⏎ ``` ⏎ ', note: '코드 블록 안은 안 건드림' },
+  { id: 'LP12', doc: '#태그 글⏎▮', expect: '#태그 글 ⏎ ', note: '태그는 헤딩 아님' },
+  { id: 'LP13', doc: '▮# 가⏎# 나▮⏎# 다', expect: '# 가 ⏎ # 나 ⏎ 다', note: '선택이 걸친 줄은 다 원문' },
+  { id: 'LP14', doc: '![그림](a.png)⏎▮', expect: '![그림](a.png) ⏎ ', note: '이미지는 그대로' },
+  { id: 'LP15', doc: '## **굵은** 제목⏎▮', expect: '굵은 제목 ⏎ ', note: '헤딩 안 강조' },
+  { id: 'LP16', doc: '\\*별\\*⏎▮', expect: '*별* ⏎ ', note: '이스케이프' },
+  { id: 'LP17', doc: '- [ ] **중요** 할 일⏎▮', expect: '☐ 중요 할 일 ⏎ ', note: '할 일 안 강조' },
+];
+
+// v3 읽기 프리뷰 — 볼트 `LiteMD_v3_작업계획서` §6 R 표와 같아야 한다
+const A = ' target="_blank" rel="noopener noreferrer"';
+export const renderVectors = [
+  { id: 'R01', md: '# 제목', html: '<h1>제목</h1>' },
+  { id: 'R02', md: '**굵게** *기울임* ~~취소~~ `코드`', html: '<p><strong>굵게</strong> <em>기울임</em> <del>취소</del> <code>코드</code></p>' },
+  { id: 'R03', md: '[링크](https://a.b)', html: `<p><a href="https://a.b"${A}>링크</a></p>` },
+  { id: 'R04', md: '[나쁜](javascript:alert(1))', html: `<p><a href="#"${A}>나쁜</a></p>` },
+  {
+    id: 'R05', md: '- [ ] 할 일⏎- [x] 끝',
+    html: '<ul><li class="task"><input type="checkbox" disabled> 할 일</li><li class="task"><input type="checkbox" disabled checked> 끝</li></ul>',
+  },
+  { id: 'R06', md: '- 사과⏎  - 배', html: '<ul><li>사과<ul><li>배</li></ul></li></ul>' },
+  { id: 'R07', md: '3. 셋⏎4. 넷', html: '<ol start="3"><li>셋</li><li>넷</li></ol>' },
+  { id: 'R08', md: '> 인용', html: '<blockquote><p>인용</p></blockquote>' },
+  { id: 'R09', md: '---', html: '<hr>' },
+  { id: 'R10', md: '```js⏎x < 1⏎```', html: '<pre><code class="language-js">x &lt; 1</code></pre>' },
+  {
+    id: 'R11', md: '| a | b |⏎|---|---|⏎| 1 | 2 |',
+    html: '<table><thead><tr><th>a</th><th>b</th></tr></thead><tbody><tr><td>1</td><td>2</td></tr></tbody></table>',
+  },
+  { id: 'R12', md: '<b>굵게</b> <script>x</script>', html: '<p>&lt;b&gt;굵게&lt;/b&gt; &lt;script&gt;x&lt;/script&gt;</p>' },
+  { id: 'R13', md: '\\*별\\*', html: '<p>*별*</p>' },
+  { id: 'R14', md: '![그림](https://a.b/c.png)', html: '<p><img src="https://a.b/c.png" alt="그림"></p>' },
+  { id: 'R15', md: 'https://a.b', html: `<p><a href="https://a.b"${A}>https://a.b</a></p>` },
+  { id: 'R16', md: '## **굵은** 제목', html: '<h2><strong>굵은</strong> 제목</h2>' },
+  { id: 'R17', md: 'a & b < c', html: '<p>a &amp; b &lt; c</p>' },
+  { id: 'R18', md: '첫 줄  ⏎다음', html: '<p>첫 줄<br>다음</p>' },
+  { id: 'R19', md: '&amp;', html: '<p>&amp;</p>' },
+  { id: 'R20', md: '제목⏎===⏎본문', html: '<h1>제목</h1><p>본문</p>' },
+];
+
+// safeUrl 계약(spec §5): 통과하는 것과 '#'로 바뀌는 것
+export const urlVectors = [
+  ['https://a.b', 'https://a.b'],
+  ['mailto:a@b.c', 'mailto:a@b.c'],
+  ['노트.md', '노트.md'],
+  ['#제목', '#제목'],
+  ['JavaScript:alert(1)', '#'],
+  [' java\tscript:x', '#'],
+  ['data:text/html,x', '#'],
+];
+
 // '- 기저귀▮' → { text, s, e }
 export function parse(display) {
   const raw = display.replaceAll('⏎', '\n').replaceAll('⇥', '\t');

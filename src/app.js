@@ -1,6 +1,6 @@
 // 화면 — CodeMirror 편집기, 파일 입출력, 탐색기, 헤딩 접기, 단축키.
 // v1(textarea)의 화면 스크립트를 옮겨 왔다. 글 변경 규칙(목록·Tab)은 logic.js의 v1 순수 함수 그대로다.
-import { EditorState, EditorSelection } from '@codemirror/state';
+import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
 import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, insertNewline, isolateHistory } from '@codemirror/commands';
 import {
@@ -13,6 +13,8 @@ import {
   listEnter, indentLines, outdentLines, trimEdit, detectEol, normalizeEol, toEol, shortcutKey, isListed, compareEntries,
 } from './logic.js';
 import { headingFold, headingSections, foldToLevel, unfoldEverything, foldHere } from './folding.js';
+import { livePreview, previewSpans } from './livepreview.js';
+import { renderMarkdown } from './render.js';
 
 const nameEl = document.getElementById('name');
 const picker = document.getElementById('file');
@@ -102,6 +104,12 @@ const theme = EditorView.theme({
   },
   '.cm-button:active': { backgroundImage: 'none', backgroundColor: 'var(--line)' },
   '.cm-panel.cm-search [name=close]': { color: 'var(--muted)' },
+  // 라이브 프리뷰 꾸밈
+  '.cm-lp-task': { margin: '0 0.4em 0 0', verticalAlign: 'middle', cursor: 'pointer', accentColor: 'var(--accent)' },
+  '.cm-lp-bullet': { color: 'var(--muted)' },
+  '.cm-lp-hr': { display: 'inline-block', width: '100%', verticalAlign: 'middle', borderTop: '1px solid var(--line)' },
+  '.cm-lp-quote': { borderLeft: '3px solid var(--line)', paddingLeft: '10px' },
+  '.cm-lp-code': { backgroundColor: 'var(--code)' },
   '.cm-searchMatch': { backgroundColor: 'var(--match)' },
   '.cm-searchMatch-selected': { backgroundColor: 'var(--accent)', color: 'var(--bg)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'var(--select)' },
@@ -114,6 +122,9 @@ const phrases = EditorState.phrases.of({
   'replaced $ matches': '$개 바꿈', 'Go to line': '줄로 이동', 'go': '이동',
   'Fold line': '접기', 'Unfold line': '펴기', 'folded code': '접힌 내용', 'unfold': '펴기',
 });
+
+const liveSlot = new Compartment(); // 라이브 프리뷰 켬/끔
+let liveOn = true;
 
 const extensions = [
   history(),
@@ -147,7 +158,9 @@ const extensions = [
 ];
 
 function createState(text, s = 0, e = s) {
-  return EditorState.create({ doc: text, selection: EditorSelection.single(s, e), extensions });
+  return EditorState.create({
+    doc: text, selection: EditorSelection.single(s, e), extensions: [extensions, liveSlot.of(liveOn ? livePreview : [])],
+  });
 }
 
 const view = new EditorView({ state: createState(''), parent: document.getElementById('editor') });
@@ -175,9 +188,41 @@ function load(handle, name, raw, path = '') {
   view.setState(createState(normalizeEol(raw)));
   doc = { handle, name, saved: view.state.doc, eol: detectEol(raw), path };
   view.scrollDOM.scrollTop = 0;
-  view.focus();
+  if (reading) renderPreview();
+  else view.focus();
   refresh();
   markCurrent();
+}
+
+// ── 라이브·읽기 프리뷰 ──
+
+const preview = document.getElementById('preview');
+const liveButton = document.getElementById('live');
+const readButton = document.getElementById('read');
+let reading = false;
+
+function setLive(on) {
+  liveOn = on;
+  view.dispatch({ effects: liveSlot.reconfigure(on ? livePreview : []) });
+  liveButton.setAttribute('aria-pressed', String(on));
+}
+
+function renderPreview() {
+  // 안전: renderMarkdown이 HTML을 글자로 바꾸고 주소를 거른다
+  preview.innerHTML = `<div class="page">${renderMarkdown(view.state.doc.toString())}</div>`;
+  preview.scrollTop = 0;
+}
+
+// 읽기 화면 ↔ 편집 화면. 읽는 동안에도 문서는 편집기에 그대로 있어서 저장·열기는 똑같이 된다
+function setReading(on) {
+  reading = on;
+  if (on) renderPreview();
+  preview.hidden = !on;
+  document.getElementById('editor').hidden = on;
+  readButton.textContent = on ? '편집' : '읽기';
+  readButton.setAttribute('aria-pressed', String(on));
+  if (on) preview.focus();
+  else view.focus();
 }
 
 // 열린 폴더 안의 파일이면 트리 경로('/하위/파일.md'), 아니면 ''
@@ -328,9 +373,10 @@ function markCurrent() {
 addEventListener('keydown', e => {
   if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
   const k = shortcutKey(e.key, e.code);
-  if (k !== 'o' && k !== 's') return;
+  if (k !== 'o' && k !== 's' && k !== 'e') return;
   e.preventDefault();
   if (k === 'o') openFile();
+  else if (k === 'e') setReading(!reading);
   else save(e.shiftKey);
 });
 
@@ -352,6 +398,8 @@ for (const button of document.querySelectorAll('[data-level]')) {
     view.focus();
   });
 }
+liveButton.addEventListener('click', () => setLive(!liveOn));
+readButton.addEventListener('click', () => setReading(!reading));
 document.getElementById('folder').addEventListener('click', openFolder);
 document.getElementById('close-folder').addEventListener('click', closeFolder);
 document.getElementById('open').addEventListener('click', openFile);
@@ -385,6 +433,10 @@ window.lite = {
     return out;
   },
   headings: () => headingSections(view.state),
+  spans: () => previewSpans(view.state),
+  get reading() {
+    return reading;
+  },
   // 접기 거터에 ▾가 붙는 줄(= CodeMirror가 접을 수 있다고 보는 줄)의 글
   foldableLines() {
     const out = [];
