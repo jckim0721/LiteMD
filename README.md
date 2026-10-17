@@ -1,55 +1,69 @@
 # LiteMD
 
-HTML 파일 한 장(외부 라이브러리 0, 20KB 이하)으로 된 초경량 마크다운 에디터.
+HTML 파일 한 장으로 된 마크다운 에디터. CodeMirror 6을 번들해서 헤딩 단위 접기와 찾기를 하고, 외부 요청 없이 오프라인으로 돈다(약 360KB).
 
-*A featherweight Markdown editor in a single HTML file — no dependencies, under 20 KB.*
+*A Markdown editor in a single HTML file — heading folding, no network requests, works offline.*
 
 ![LiteMD](docs/screenshot.png)
 
 ## 쓰는 법
 
-`index.html`을 크롬이나 엣지로 연다. 설치·빌드 없음.
+`index.html`을 크롬이나 엣지로 연다. 설치 없음.
 
-| 키 | 동작 |
+| 키·버튼 | 동작 |
 |---|---|
 | Ctrl+O / Ctrl+S | 열기 / 저장(연 파일에 바로 덮어쓰기) |
 | Shift+[저장] | 다른 이름으로 저장 (크롬은 Ctrl+Shift+S도 — 엣지는 이 키가 웹 캡처) |
 | [폴더] | 폴더를 열어 왼쪽에 트리. 파일을 누르면 열린다 |
+| 헤딩 왼쪽 ▾ / ▸, 접힌 자리 ⋯ | 그 헤딩 섹션 접기 / 펴기 |
+| [H1] [H2] [H3] [펼침] | n단계 헤딩까지만 보이게 접기 / 모두 펴기 |
+| Ctrl+Shift+[ / Ctrl+Shift+] | 커서가 있는 섹션 접기(다시 누르면 한 단계 바깥) / 펴기 |
+| Ctrl+F | 찾기·바꾸기 (접힌 곳에서 찾으면 그 부분이 펴진다) |
 | Enter | 목록 이어쓰기: `-` `*` `+` `1.` `1)` `- [ ]` (체크된 할 일은 빈 칸으로) |
 | 빈 항목에서 Enter | 하위 항목이면 한 단계 내어쓰기, 최상위면 목록 끝 |
 | Shift+Enter | 이어쓰기 없이 줄바꿈 |
 | Tab / Shift+Tab | 들여쓰기 / 내어쓰기 (공백 2칸, 여러 줄 선택 가능) |
 
-- 한글 조합 중 Enter·Tab은 건드리지 않는다(글자 겹침 없음). 자동으로 넣은 글은 Ctrl+Z 한 번에 되돌아간다
+- 접기는 보기만 바꾼다. 접힌 채 저장해도 전체 글이 저장된다
+- 한글 조합 중에는 키를 가로채지 않는다(글자 겹침 없음). 자동으로 넣은 글은 Ctrl+Z 한 번에 되돌아간다
 - 저장 안 한 변경은 `•`로 표시하고, 그 상태로 닫거나 다른 파일을 열면 확인한다
 - CRLF 파일은 CRLF로 저장한다. BOM은 저장하면 빠진다
 - 탐색기는 `.md`·`.markdown`·`.txt`만 보이고 `.git`·`.obsidian`처럼 점으로 시작하는 건 숨긴다
 - File System Access API가 없는 브라우저(폰·파이어폭스·사파리)에서는 파일 선택으로 열고 다운로드로 저장한다. 폴더 탐색기는 안 보인다
 
-## 일부러 안 하는 것
+## 버전
 
-미리보기·렌더링, 라이브 프리뷰, 레벨별 접기, 구문 강조, 여러 탭, 찾기·바꾸기. textarea 한 장으로 버티는 게 이 버전의 규칙이다. 라이브 프리뷰와 접기는 편집기 바닥을 바꿔야 해서 다음 버전 몫이다.
+- **v2 (지금):** CodeMirror 6 — 헤딩 접기·레벨 접기·찾기, 기본 강조
+- **v1.0 (태그):** textarea 한 장, 외부 라이브러리 0, 16.5KB. 목록 이어쓰기·들여쓰기·열기/저장·폴더 탐색기
+
+라이브 프리뷰(커서 없는 줄은 기호를 숨기고 렌더링처럼)는 다음 차례다.
 
 ## 구조
 
 ```
-index.html              전부
-  <script id="logic">   순수 함수: 목록 이어쓰기·들여쓰기·줄바꿈·단축키·탐색기 정렬 (DOM 없음)
-  <script>              화면: 편집창·파일 입출력·탐색기·단축키
-tests/vectors.mjs       검증 예시(입력 → 기대 출력)
-tests/logic.test.mjs    logic 블록만 떼어 Node에서 도는 단위 테스트 + 크기·외부 리소스 검사
-tests/browser.test.mjs  크롬·엣지 headless에 실제 키 이벤트를 보내는 브라우저 테스트
-tests/cdp.mjs           Chrome DevTools Protocol 클라이언트 (Node 내장 WebSocket, npm 의존성 0)
+src/index.html      화면 틀(HTML·CSS)
+src/app.js          편집기·파일 입출력·탐색기·단축키
+src/logic.js        순수 함수: 목록 이어쓰기·들여쓰기·줄바꿈·단축키·탐색기 정렬·레벨 접기 대상
+src/folding.js      헤딩 섹션 찾기(마크다운 구문 트리)와 접기 명령
+build.mjs           src/를 묶어 루트 index.html 한 장으로 (라이선스 고지 포함)
+index.html          빌드 결과물 — 이걸 열면 된다
+tests/              단위 테스트(Node) + 크롬·엣지 headless 브라우저 테스트(CDP, 별도 도구 없음)
 ```
 
-## 테스트
+## 빌드·테스트
 
 ```
-node --test "tests/*.test.mjs"
+npm install
+npm run build      # index.html 생성
+npm test           # node --test "tests/*.test.mjs"
 ```
 
 Node 22 이상. 브라우저 테스트는 크롬·엣지가 기본 설치 경로에 있으면 임시 프로필로 띄운다(다른 경로면 `CHROME_PATH`·`EDGE_PATH`). 파일 대화상자는 띄울 수 없어서 페이지 안에서 가짜 파일·폴더 핸들로 바꿔 끼운다.
 
+## 라이선스
+
+번들에 들어간 라이브러리(CodeMirror·Lezer 등, 모두 MIT)의 고지문은 `index.html` 맨 위 주석에 있다.
+
 ## 왜 만들었나
 
-매달 하나씩 끝까지 만들어 보는 연습의 0호(2026년 10월).
+매달 하나씩 끝까지 만들어 보는 연습. v1이 0호(2026년 10월), v2가 1호.

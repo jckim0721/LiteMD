@@ -68,6 +68,28 @@ export const helpers = [
   },
 ];
 
+// v2 헤딩 접기 — 볼트 `LiteMD_v2_작업계획서` §6 표와 같아야 한다.
+// expect는 "헤딩(레벨): 숨는 줄 범위"(1부터 센 줄 번호)를 ' · '로 이은 것, 없으면 '없음'
+export const headingVectors = [
+  { id: 'H01', doc: '# 가⏎본문⏎# 나⏎본문2', expect: '가(1): 2~2 · 나(1): 4~4', note: '같은 레벨에서 끊김' },
+  { id: 'H02', doc: '# A⏎## a1⏎x⏎## a2⏎y⏎# B', expect: 'A(1): 2~5 · a1(2): 3~3 · a2(2): 5~5', note: '하위 헤딩 포함, 본문 없는 B는 빠짐' },
+  { id: 'H03', doc: '# A⏎```⏎# 코드 주석⏎```⏎끝', expect: 'A(1): 2~5', note: '코드 블록 안 #는 헤딩 아님' },
+  { id: 'H04', doc: '#태그⏎본문', expect: '없음', note: '띄어쓰기 없는 #' },
+  { id: 'H05', doc: '## A⏎본문⏎⏎⏎## B⏎x', expect: 'A(2): 2~2 · B(2): 6~6', note: '섹션 끝의 빈 줄은 안 접음' },
+  { id: 'H06', doc: '# A⏎# B', expect: '없음', note: '본문 없는 헤딩' },
+  { id: 'H07', doc: '    # 코드⏎본문', expect: '없음', note: '4칸 들여쓰면 코드' },
+  { id: 'H08', doc: '제목⏎===⏎본문', expect: '제목(1): 2~3', note: '밑줄 헤딩 — 밑줄 줄부터 접힌다' },
+  { id: 'H09', doc: '## 제목 ##⏎본문', expect: '제목(2): 2~2', note: '닫는 #가 있어도 헤딩' },
+];
+
+// 레벨 접기 — 이 문서의 헤딩: A(1) 2~6 · a1(2) 3~4 · a1x(3) 4~4 · a2(2) 6~6 · B(1) 8~9 · b-x(3) 9~9
+export const levelDoc = '# A⏎## a1⏎### a1x⏎x⏎## a2⏎y⏎# B⏎### b-x⏎z';
+export const levelVectors = [
+  { id: 'L01', n: 1, expect: 'A, B', note: 'H1만 보인다' },
+  { id: 'L02', n: 2, expect: 'a1, a2, b-x', note: '부모 H2가 없는 H3(b-x)도 접는다' },
+  { id: 'L03', n: 3, expect: 'a1x, b-x', note: 'H3 섹션만' },
+];
+
 // '- 기저귀▮' → { text, s, e }
 export function parse(display) {
   const raw = display.replaceAll('⏎', '\n').replaceAll('⇥', '\t');

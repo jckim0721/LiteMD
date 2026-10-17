@@ -15,6 +15,10 @@ const KEYS = {
   o: { key: 'o', code: 'KeyO', vk: 79 },
   s: { key: 's', code: 'KeyS', vk: 83 },
   'ㄴ': { key: 'ㄴ', code: 'KeyS', vk: 83 }, // 한글 입력 모드에서 S 자리
+  f: { key: 'f', code: 'KeyF', vk: 70 },
+  '{': { key: '{', code: 'BracketLeft', vk: 219 }, // 실제 키보드에서 Shift+[ 는 key가 '{'로 온다
+  '}': { key: '}', code: 'BracketRight', vk: 221 },
+  Escape: { key: 'Escape', code: 'Escape', vk: 27 },
 };
 
 const modBits = mods => (mods.alt ? 1 : 0) | (mods.ctrl ? 2 : 0) | (mods.meta ? 4 : 0) | (mods.shift ? 8 : 0);
@@ -117,12 +121,25 @@ export async function launch(exe) {
       await send('Input.dispatchKeyEvent', { type: 'keyUp', ...common });
     },
 
+    // 글자를 키 하나씩 친다(keydown·keyup이 다 나간다). Input.insertText는 keyup이 없어서
+    // keyup 때 값을 읽는 입력칸(CodeMirror 검색창 등)에는 이걸 쓴다
+    async typeKeys(text) {
+      for (const ch of text) {
+        await send('Input.dispatchKeyEvent', { type: 'keyDown', key: ch, text: ch, unmodifiedText: ch });
+        await send('Input.dispatchKeyEvent', { type: 'keyUp', key: ch });
+      }
+    },
+
     // 실제 마우스 클릭(요소 가운데). mods는 press와 같다
     async click(selector, mods = {}) {
       const { x, y } = await browser.eval(`(() => {
         const r = document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect();
         return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
       })()`);
+      await browser.clickAt(x, y, mods);
+    },
+
+    async clickAt(x, y, mods = {}) {
       for (const type of ['mousePressed', 'mouseReleased']) {
         await send('Input.dispatchMouseEvent', { type, x, y, button: 'left', clickCount: 1, modifiers: modBits(mods) });
       }

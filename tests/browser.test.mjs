@@ -1,12 +1,13 @@
-// 브라우저 테스트(B) — 크롬·엣지 headless에 실제 키 이벤트를 보내 화면 동작을 확인한다.
-// 파일 대화상자는 띄울 수 없으니 showOpenFilePicker·showSaveFilePicker를 페이지 안에서 가짜로 바꿔 끼운다.
+// 브라우저 테스트(B·X·F) — 크롬·엣지 headless에 실제 키·마우스 이벤트를 보내 화면 동작을 확인한다(v2, CodeMirror).
+// 편집기 상태는 앱이 열어 둔 window.lite로 읽고 초기화한다. 파일 대화상자는 띄울 수 없으니
+// showOpenFilePicker·showSaveFilePicker·showDirectoryPicker를 페이지 안에서 가짜로 바꿔 끼운다.
 import { describe, test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { launch } from './cdp.mjs';
-import { vectors, parse, show, expectedOnScreen } from './vectors.mjs';
+import { vectors, levelDoc, parse, show, expectedOnScreen } from './vectors.mjs';
 
 const BROWSERS = [
   ['Chrome', process.env.CHROME_PATH || 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'],
@@ -21,7 +22,7 @@ for (const [label, exe] of BROWSERS) {
     before(async () => {
       b = await launch(exe);
       await b.open(PAGE);
-      b.initial = await b.eval(`({ title: document.title, focused: document.activeElement === ta,
+      b.initial = await b.eval(`({ title: document.title, focused: document.activeElement === lite.view.contentDOM,
         fsa: typeof window.showOpenFilePicker, folderButton: !document.getElementById('folder').hidden })`);
       // keydown 기록기 — 앱 핸들러가 끝난 뒤(버블 단계, window)의 상태를 본다
       await b.eval(`window.__keys = []; addEventListener('keydown', e =>
@@ -29,21 +30,17 @@ for (const [label, exe] of BROWSERS) {
     });
     after(() => b?.close());
 
-    // 편집창을 주어진 상태로 초기화한다(값을 대입하므로 Ctrl+Z 기록도 지워진다)
+    // 편집기를 주어진 상태로 초기화한다(새 상태라 되돌리기 기록·접기도 지워진다)
     const setDoc = display => {
       const { text, s, e } = parse(display);
-      return b.eval(`(() => {
-        ta.value = ${JSON.stringify(text)};
-        doc = { handle: null, name: '', saved: ta.value, eol: '\\n', path: '' };
-        ta.focus();
-        ta.setSelectionRange(${s}, ${e});
-        refresh();
-      })()`);
+      return b.eval(`lite.reset(${JSON.stringify(text)}, ${s}, ${e})`);
     };
     const screen = async () => {
-      const r = await b.eval('({ v: ta.value, s: ta.selectionStart, e: ta.selectionEnd })');
+      const r = await b.eval('lite.snapshot()');
       return show(r.v, r.s, r.e);
     };
+    const value = () => b.eval('lite.snapshot().v');
+    const focused = () => b.eval('document.activeElement === lite.view.contentDOM');
     const type = text => b.send('Input.insertText', { text });
 
     // 가짜 파일 핸들·대화상자. 쓴 내용은 __fs.writes에 쌓인다
@@ -86,7 +83,7 @@ for (const [label, exe] of BROWSERS) {
         await setDoc(v.before);
         await b.press(v.key === 'Enter' ? 'Enter' : 'Tab', { shift: v.key === 'Shift+Tab' });
         assert.equal(await screen(), expectedOnScreen(v));
-        assert.equal(await b.eval('document.activeElement === ta'), true, '포커스가 편집창에 남아야 한다');
+        assert.equal(await focused(), true, '포커스가 편집창에 남아야 한다');
       });
     }
 
@@ -109,7 +106,7 @@ for (const [label, exe] of BROWSERS) {
       await b.press('Tab');
       await b.press('z', { ctrl: true });
       t.diagnostic('되돌린 뒤 화면: ' + await screen());
-      assert.equal(await b.eval('ta.value'), '- 항목');
+      assert.equal(await value(), '- 항목');
     });
 
     test('B06 빈 항목을 지운 뒤 Ctrl+Z 한 번이면 기호가 돌아온다', async () => {
@@ -117,7 +114,7 @@ for (const [label, exe] of BROWSERS) {
       await b.press('Enter');
       assert.equal(await screen(), '- 첫째⏎▮');
       await b.press('z', { ctrl: true });
-      assert.equal(await b.eval('ta.value'), '- 첫째\n- ');
+      assert.equal(await value(), '- 첫째\n- ');
     });
 
     test('B07 타이핑 → Enter → Ctrl+Z: 이어쓰기만 취소되고 친 글은 남는다', async () => {
@@ -134,41 +131,26 @@ for (const [label, exe] of BROWSERS) {
       await b.eval('__keys.length = 0');
       await b.send('Input.imeSetComposition', { text: '귀', selectionStart: 1, selectionEnd: 1 });
       await b.press('Process'); // 실제 IME에서 조합 중 Enter는 이렇게 먼저 온다
-      const during = await b.eval('ta.value');
+      const during = await value();
       await type('귀'); // 조합 확정
       await b.press('Enter'); // 확정 뒤 진짜 Enter
-      t.diagnostic('keydown 기록: ' + JSON.stringify(await b.eval('__keys')));
-      assert.equal(during, '- 기저귀', '조합 중에는 줄바꿈이 없어야 한다');
+      t.diagnostic(`조합 중 값: ${JSON.stringify(during)} · keydown 기록: ${JSON.stringify(await b.eval('__keys'))}`);
+      assert.ok(!during.includes('\n'), '조합 중에는 줄바꿈이 없어야 한다');
       assert.equal(await screen(), '- 기저귀⏎- ▮');
-    });
-
-    test('B09 isComposing인 keydown은 앱이 손대지 않는다(합성 이벤트로 가드만 확인)', async () => {
-      await setDoc('- 기저귀▮');
-      const r = await b.eval(`(() => {
-        const fire = isComposing => {
-          const ev = new KeyboardEvent('keydown', { key: 'Enter', isComposing, bubbles: true, cancelable: true });
-          ta.dispatchEvent(ev);
-          return ev.defaultPrevented;
-        };
-        const composing = fire(true), whileComposing = ta.value;
-        const normal = fire(false);
-        return { composing, whileComposing, normal, after: ta.value };
-      })()`);
-      assert.deepEqual(r, { composing: false, whileComposing: '- 기저귀', normal: true, after: '- 기저귀\n- ' });
     });
 
     test('B10 Ctrl+O: 파일 내용이 뜨고(CRLF→LF), 이름이 보이고, 수정 표시 없음', async () => {
       await setDoc('▮');
       await stubFiles();
       await b.press('o', { ctrl: true });
-      await b.waitFor('__fs.opened === 1 && ta.value !== ""');
-      const r = await b.eval(`({ v: ta.value, title: document.title, name: nameEl.textContent,
-        dirty: nameEl.classList.contains('dirty'), eol: doc.eol })`);
+      await b.waitFor('__fs.opened === 1 && lite.snapshot().v !== ""');
+      const r = await b.eval(`({ v: lite.snapshot().v, title: document.title, name: document.getElementById('name').textContent,
+        dirty: document.getElementById('name').classList.contains('dirty'), eol: lite.doc.eol })`);
       assert.deepEqual(r, { v: '# 제목\n- 기저귀\n', title: 'a.md — LiteMD', name: 'a.md', dirty: false, eol: '\r\n' });
     });
 
     test('B11 타이핑하면 탭 제목과 상단 바에 •, 되돌려서 같아지면 사라짐', async () => {
-      const state = () => b.eval(`[document.title, nameEl.classList.contains('dirty')]`);
+      const state = () => b.eval(`[document.title, document.getElementById('name').classList.contains('dirty')]`);
       await type('추가 ');
       assert.deepEqual(await state(), ['• a.md — LiteMD', true]);
       await b.press('z', { ctrl: true });
@@ -214,7 +196,7 @@ for (const [label, exe] of BROWSERS) {
       await type('안 저장한 글');
       await b.eval('__fs.confirmAnswer = false');
       await b.press('o', { ctrl: true });
-      const r = await b.eval('({ confirms: __fs.confirms.length, opened: __fs.opened, v: ta.value })');
+      const r = await b.eval('({ confirms: __fs.confirms.length, opened: __fs.opened, v: lite.snapshot().v })');
       assert.deepEqual(r, { confirms: 1, opened: 0, v: '안 저장한 글' });
     });
 
@@ -248,10 +230,99 @@ for (const [label, exe] of BROWSERS) {
       await b.click('#save', { shift: true });
       await b.waitFor('__fs.writes.length === 1');
       const r = await b.eval(`({ suggested: __fs.saveAs[0], wrote: __fs.writes[0].name, title: document.title,
-        focused: document.activeElement === ta })`);
+        focused: document.activeElement === lite.view.contentDOM })`);
       assert.deepEqual(r, { suggested: '제목 없음.md', wrote: 'c.md', title: 'c.md — LiteMD', focused: true });
       assert.equal(await screen(), '버튼으로▮ 저장');
     });
+
+    // ── 헤딩 접기(F) ──
+
+    const foldedHeads = () => b.eval('lite.folded().map(([from]) => lite.view.state.doc.lineAt(from).text)');
+    const contentText = () => b.eval('lite.view.contentDOM.textContent');
+    // CodeMirror는 다음 프레임에 줄 높이를 재고, 헤딩 글꼴(강조)도 그사이 붙는다. 좌표로 누르기 전엔 자리 잡기를 기다린다
+    const settle = () => b.eval('new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => r(0))))');
+
+    test('F01 접기 거터의 ▾를 누르면 그 섹션이 접히고 ⋯가 보인다', async () => {
+      await setDoc('▮' + levelDoc);
+      await settle();
+      const p = await b.eval(`(() => {
+        const marks = [...document.querySelectorAll('.cm-foldGutter .cm-gutterElement')].filter(el => el.textContent === '▾');
+        const r = marks[0].getBoundingClientRect();
+        return { n: marks.length, x: r.x + r.width / 2, y: r.y + r.height / 2 };
+      })()`);
+      assert.equal(p.n, 6, '본문이 있는 헤딩 6개에 ▾');
+      await b.clickAt(p.x, p.y);
+      await b.waitFor('lite.folded().length === 1');
+      assert.deepEqual(await foldedHeads(), ['# A']);
+      assert.equal(await b.eval(`!!document.querySelector('.cm-foldPlaceholder')`), true);
+      assert.doesNotMatch(await contentText(), /a1x/);
+    });
+
+    test('F02 ⋯를 누르면 편다', async () => {
+      await settle();
+      await b.click('.cm-foldPlaceholder');
+      await b.waitFor('lite.folded().length === 0');
+      assert.match(await contentText(), /a1x/);
+    });
+
+    test('F03 [H2]: H1·H2 헤딩만 보이게 — a1·a2·b-x 섹션이 접히고 포커스는 편집창에', async () => {
+      await setDoc('▮' + levelDoc);
+      await b.click('[data-level="2"]');
+      assert.deepEqual(await foldedHeads(), ['## a1', '## a2', '### b-x']);
+      assert.equal(await focused(), true);
+    });
+
+    test('F04 [H1]·[H3]·[펼침]', async () => {
+      await b.click('[data-level="1"]');
+      assert.deepEqual(await foldedHeads(), ['# A', '# B']);
+      await b.click('[data-level="3"]');
+      assert.deepEqual(await foldedHeads(), ['### a1x', '### b-x']);
+      await b.click('[data-level="0"]');
+      assert.deepEqual(await foldedHeads(), []);
+    });
+
+    test('F05 Ctrl+Shift+[: 커서를 품은 가장 안쪽부터, 다시 누르면 한 단계 바깥 / Ctrl+Shift+]: 편다', async () => {
+      await setDoc('# A⏎## a1⏎### a1x⏎x▮⏎## a2⏎y⏎# B⏎### b-x⏎z');
+      await b.press('{', { ctrl: true, shift: true });
+      assert.deepEqual(await foldedHeads(), ['### a1x']);
+      await b.press('{', { ctrl: true, shift: true });
+      assert.ok((await foldedHeads()).includes('## a1'), '두 번째는 a1');
+      await b.press('}', { ctrl: true, shift: true });
+      assert.ok(!(await foldedHeads()).includes('## a1'), 'a1이 펴진다');
+    });
+
+    test('F06 접힌 채 저장해도 전체 글이 저장된다', async () => {
+      await setDoc('▮' + levelDoc);
+      await stubFiles();
+      await b.click('[data-level="1"]');
+      await b.press('s', { ctrl: true });
+      await b.waitFor('__fs.writes.length === 1');
+      assert.equal(await b.eval('__fs.writes[0].text'), parse(levelDoc).text);
+    });
+
+    test('F07 접힌 채 다른 곳을 고쳐도 접기는 그대로', async () => {
+      await setDoc('# A▮⏎## a1⏎### a1x⏎x⏎## a2⏎y⏎# B⏎### b-x⏎z');
+      await b.click('[data-level="2"]');
+      await type(' 제목');
+      assert.deepEqual(await foldedHeads(), ['## a1', '## a2', '### b-x']);
+      assert.equal((await value()).split('\n')[0], '# A 제목');
+    });
+
+    test('F08 Ctrl+F: 한국어 검색 패널, 접힌 곳의 글을 찾으면 그 부분이 펴진다, Esc로 닫힘', async () => {
+      await setDoc('▮' + levelDoc);
+      await b.click('[data-level="1"]');
+      await b.press('f', { ctrl: true });
+      await b.waitFor(`!!document.querySelector('.cm-search input[main-field]')`);
+      assert.equal(await b.eval(`document.querySelector('.cm-search input[main-field]').placeholder`), '찾기');
+      await b.typeKeys('a1x'); // 검색창은 keyup 때 검색어를 확정한다
+      await b.press('Enter');
+      await b.waitFor(`(() => { const r = lite.view.state.selection.main; return lite.view.state.sliceDoc(r.from, r.to) === 'a1x'; })()`);
+      assert.ok(!(await foldedHeads()).includes('# A'), '찾은 글을 품은 접기는 풀린다');
+      await b.press('Escape');
+      assert.equal(await b.eval(`!!document.querySelector('.cm-search')`), false);
+    });
+
+    // ── 폴더 탐색기(X) ──
 
     // 가짜 폴더: 숨길 것(.obsidian, 사진.png)과 정렬을 확인할 이름들. stubFiles() 다음에 부른다
     const stubFolder = () => b.eval(`(() => {
@@ -300,35 +371,36 @@ for (const [label, exe] of BROWSERS) {
       };
       return true;
     })()`);
-    const rows = () => b.eval('[...tree.children].map(r => r.textContent)');
-    const current = () => b.eval(`[...tree.querySelectorAll('.current')].map(r => r.dataset.path)`);
+    const rows = () => b.eval(`[...document.getElementById('tree').children].map(r => r.textContent)`);
+    const current = () => b.eval(`[...document.querySelectorAll('#tree .current')].map(r => r.dataset.path)`);
 
     test('X01 [폴더]: 폴더 이름과 트리 — 폴더 먼저·한국어 이름순, .md·.txt만, 점으로 시작하는 건 숨김', async () => {
       await setDoc('▮');
       await stubFiles();
       await stubFolder();
       await b.click('#folder');
-      await b.waitFor('tree.children.length > 0');
-      const r = await b.eval(`({ shown: !side.hidden, name: document.getElementById('folder-name').textContent,
-        mode: __fs.dirOpts.mode })`);
+      await b.waitFor(`document.getElementById('tree').children.length > 0`);
+      const r = await b.eval(`({ shown: !document.getElementById('side').hidden,
+        name: document.getElementById('folder-name').textContent, mode: __fs.dirOpts.mode })`);
       assert.deepEqual(r, { shown: true, name: '노트', mode: 'readwrite' });
       assert.deepEqual(await rows(), ['▸ 나', '▸ A', '▸ b', '2.md', '10.md', '가.md', 'Z.md']);
     });
 
     test('X02 하위 폴더를 누르면 펼치고(한 단계 들여쓰기), 다시 누르면 접는다', async () => {
       await b.click('[data-path="/b"]');
-      await b.waitFor('tree.children.length === 8');
+      await b.waitFor(`document.getElementById('tree').children.length === 8`);
       assert.deepEqual(await rows(), ['▸ 나', '▸ A', '▾ b', '하위.md', '2.md', '10.md', '가.md', 'Z.md']);
       assert.equal(await b.eval(`document.querySelector('[data-path="/b/하위.md"]').style.paddingLeft`), '26px');
       await b.click('[data-path="/b"]');
-      await b.waitFor('tree.children.length === 7');
+      await b.waitFor(`document.getElementById('tree').children.length === 7`);
       assert.equal((await rows())[2], '▸ b');
     });
 
     test('X03 파일을 누르면 열리고(CRLF→LF), 트리에서 강조, 편집창 포커스', async () => {
       await b.click('[data-path="/가.md"]');
-      await b.waitFor('doc.path === "/가.md"');
-      const r = await b.eval(`({ v: ta.value, title: document.title, eol: doc.eol, focused: document.activeElement === ta })`);
+      await b.waitFor('lite.doc.path === "/가.md"');
+      const r = await b.eval(`({ v: lite.snapshot().v, title: document.title, eol: lite.doc.eol,
+        focused: document.activeElement === lite.view.contentDOM })`);
       assert.deepEqual(r, { v: '# 가\n본문\n', title: '가.md — LiteMD', eol: '\r\n', focused: true });
       assert.deepEqual(await current(), ['/가.md']);
     });
@@ -337,7 +409,7 @@ for (const [label, exe] of BROWSERS) {
       await type('수정');
       await b.eval('__fs.confirmAnswer = false');
       await b.click('[data-path="/2.md"]');
-      const r = await b.eval('({ confirms: __fs.confirms.length, path: doc.path, v: ta.value })');
+      const r = await b.eval('({ confirms: __fs.confirms.length, path: lite.doc.path, v: lite.snapshot().v })');
       assert.deepEqual(r, { confirms: 1, path: '/가.md', v: '수정# 가\n본문\n' });
     });
 
@@ -352,15 +424,16 @@ for (const [label, exe] of BROWSERS) {
       await setDoc('새 노트 내용▮');
       await b.eval(`__fs.saveName = '새 노트.md'`);
       await b.press('s', { ctrl: true });
-      await b.waitFor('[...tree.children].some(r => r.dataset.path === "/새 노트.md")');
-      const r = await b.eval('({ startInIsFolder: __fs.startIn === __fs.root, path: doc.path })');
+      await b.waitFor(`[...document.getElementById('tree').children].some(r => r.dataset.path === "/새 노트.md")`);
+      const r = await b.eval('({ startInIsFolder: __fs.startIn === __fs.root, path: lite.doc.path })');
       assert.deepEqual(r, { startInIsFolder: true, path: '/새 노트.md' });
       assert.deepEqual(await current(), ['/새 노트.md']);
     });
 
     test('X07 [×]: 폴더만 닫고 열린 문서는 그대로', async () => {
       await b.click('#close-folder');
-      const r = await b.eval('({ hidden: side.hidden, rows: tree.children.length, name: doc.name, v: ta.value })');
+      const r = await b.eval(`({ hidden: document.getElementById('side').hidden, rows: document.getElementById('tree').children.length,
+        name: lite.doc.name, v: lite.snapshot().v })`);
       assert.deepEqual(r, { hidden: true, rows: 0, name: '새 노트.md', v: '새 노트 내용' });
     });
 
@@ -368,7 +441,7 @@ for (const [label, exe] of BROWSERS) {
       await b.eval('__fs.abort = true');
       await b.click('#folder');
       await sleep(50);
-      const r = await b.eval('({ hidden: side.hidden, alerts: __fs.alerts.length })');
+      const r = await b.eval(`({ hidden: document.getElementById('side').hidden, alerts: __fs.alerts.length })`);
       assert.deepEqual(r, { hidden: true, alerts: 0 });
     });
 
@@ -379,6 +452,7 @@ for (const [label, exe] of BROWSERS) {
       await b.eval(`(() => {
         window.showOpenFilePicker = undefined;
         window.showSaveFilePicker = undefined;
+        const picker = document.getElementById('file');
         picker.click = () => {
           const dt = new DataTransfer();
           dt.items.add(new File(['폰에서 연 글\\r\\n'], 'm.md'));
@@ -387,8 +461,8 @@ for (const [label, exe] of BROWSERS) {
         };
       })()`);
       await b.press('o', { ctrl: true });
-      await b.waitFor('ta.value !== ""');
-      const r = await b.eval('({ v: ta.value, name: doc.name, handle: doc.handle, eol: doc.eol })');
+      await b.waitFor('lite.snapshot().v !== ""');
+      const r = await b.eval('({ v: lite.snapshot().v, name: lite.doc.name, handle: lite.doc.handle, eol: lite.doc.eol })');
       assert.deepEqual(r, { v: '폰에서 연 글\n', name: 'm.md', handle: null, eol: '\r\n' });
     });
 
