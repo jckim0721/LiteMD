@@ -28,7 +28,7 @@ for (const v of vectors) {
 }
 
 for (const h of helpers) {
-  test(`${h.id} ${h.call}`, () => {
+  test(`${h.id} ${h.call.replace(/\s+/g, ' ').slice(0, 80)}`, () => {
     assert.equal(vm.runInContext(h.call, ctx), h.expect);
   });
 }

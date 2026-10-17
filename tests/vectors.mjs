@@ -55,6 +55,17 @@ export const helpers = [
   { id: 'P06', call: `shortcutKey('s', 'KeyS')`, expect: 's' },
   { id: 'P07', call: `shortcutKey('r', 'KeyO')`, expect: 'r' },
   { id: 'P08', call: `shortcutKey('Enter', 'Enter')`, expect: '' },
+  { id: 'P09', call: `isListed('노트.md', 'file')`, expect: true },
+  { id: 'P10', call: `isListed('README.MD', 'file')`, expect: true },
+  { id: 'P11', call: `isListed('사진.png', 'file')`, expect: false },
+  { id: 'P12', call: `isListed('.obsidian', 'directory')`, expect: false },
+  { id: 'P13', call: `isListed('Projects', 'directory')`, expect: true },
+  {
+    id: 'P14',
+    call: `[['b', 'directory'], ['A', 'directory'], ['나', 'directory'], ['10.md', 'file'], ['2.md', 'file'], ['Z.md', 'file'], ['가.md', 'file']]
+      .map(([name, kind]) => ({ name, kind })).sort(compareEntries).map(e => e.name).join(', ')`,
+    expect: '나, A, b, 2.md, 10.md, 가.md, Z.md',
+  },
 ];
 
 // '- 기저귀▮' → { text, s, e }

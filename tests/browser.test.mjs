@@ -22,7 +22,7 @@ for (const [label, exe] of BROWSERS) {
       b = await launch(exe);
       await b.open(PAGE);
       b.initial = await b.eval(`({ title: document.title, focused: document.activeElement === ta,
-        fsa: typeof window.showOpenFilePicker })`);
+        fsa: typeof window.showOpenFilePicker, folderButton: !document.getElementById('folder').hidden })`);
       // keydown 기록기 — 앱 핸들러가 끝난 뒤(버블 단계, window)의 상태를 본다
       await b.eval(`window.__keys = []; addEventListener('keydown', e =>
         __keys.push({ key: e.key, keyCode: e.keyCode, isComposing: e.isComposing, prevented: e.defaultPrevented })); 0`);
@@ -34,7 +34,7 @@ for (const [label, exe] of BROWSERS) {
       const { text, s, e } = parse(display);
       return b.eval(`(() => {
         ta.value = ${JSON.stringify(text)};
-        doc = { handle: null, name: '', saved: ta.value, eol: '\\n' };
+        doc = { handle: null, name: '', saved: ta.value, eol: '\\n', path: '' };
         ta.focus();
         ta.setSelectionRange(${s}, ${e});
         refresh();
@@ -77,6 +77,7 @@ for (const [label, exe] of BROWSERS) {
       t.diagnostic(`${b.name} · file://에서 showOpenFilePicker: ${b.initial.fsa} · 요청: ${JSON.stringify(b.requests)}`);
       assert.equal(b.initial.title, '제목 없음 — LiteMD');
       assert.equal(b.initial.focused, true, '편집창에 포커스');
+      assert.equal(b.initial.folderButton, true, '폴더 열기를 지원하면 [폴더] 버튼이 보인다');
       assert.ok(b.requests.every(url => url === PAGE), '외부 요청이 없어야 한다');
     });
 
@@ -252,6 +253,125 @@ for (const [label, exe] of BROWSERS) {
       assert.equal(await screen(), '버튼으로▮ 저장');
     });
 
+    // 가짜 폴더: 숨길 것(.obsidian, 사진.png)과 정렬을 확인할 이름들. stubFiles() 다음에 부른다
+    const stubFolder = () => b.eval(`(() => {
+      const fs = window.__fs;
+      const file = (name, text) => ({
+        kind: 'file', name, text,
+        async getFile() { return new File([this.text], this.name); },
+        async createWritable() {
+          const f = this, parts = [];
+          return { async write(t) { parts.push(t); }, async close() { f.text = parts.join(''); fs.writes.push({ name: f.name, text: f.text }); } };
+        },
+      });
+      const dir = (name, children) => ({
+        kind: 'directory', name, children,
+        async *values() { yield* this.children; },
+        async resolve(target) {
+          const walk = (d, path) => {
+            for (const c of d.children) {
+              if (c === target) return [...path, c.name];
+              const found = c.kind === 'directory' && walk(c, [...path, c.name]);
+              if (found) return found;
+            }
+            return null;
+          };
+          return walk(this, []);
+        },
+      });
+      const rootDir = fs.root = dir('노트', [
+        dir('.obsidian', [file('app.json', '{}')]),
+        dir('b', [file('하위.md', '# 하위\\n')]),
+        dir('A', []),
+        dir('나', []),
+        file('10.md', '열'), file('2.md', '둘'), file('사진.png', 'x'), file('가.md', '# 가\\r\\n본문\\r\\n'), file('Z.md', 'z'),
+      ]);
+      window.showDirectoryPicker = async opts => {
+        fs.dirOpts = opts;
+        if (fs.abort) throw new DOMException('취소', 'AbortError');
+        return rootDir;
+      };
+      window.showSaveFilePicker = async o => {
+        fs.saveAs.push(o.suggestedName);
+        fs.startIn = o.startIn;
+        const f = file(fs.saveName || o.suggestedName, '');
+        rootDir.children.push(f);
+        return f;
+      };
+      return true;
+    })()`);
+    const rows = () => b.eval('[...tree.children].map(r => r.textContent)');
+    const current = () => b.eval(`[...tree.querySelectorAll('.current')].map(r => r.dataset.path)`);
+
+    test('X01 [폴더]: 폴더 이름과 트리 — 폴더 먼저·한국어 이름순, .md·.txt만, 점으로 시작하는 건 숨김', async () => {
+      await setDoc('▮');
+      await stubFiles();
+      await stubFolder();
+      await b.click('#folder');
+      await b.waitFor('tree.children.length > 0');
+      const r = await b.eval(`({ shown: !side.hidden, name: document.getElementById('folder-name').textContent,
+        mode: __fs.dirOpts.mode })`);
+      assert.deepEqual(r, { shown: true, name: '노트', mode: 'readwrite' });
+      assert.deepEqual(await rows(), ['▸ 나', '▸ A', '▸ b', '2.md', '10.md', '가.md', 'Z.md']);
+    });
+
+    test('X02 하위 폴더를 누르면 펼치고(한 단계 들여쓰기), 다시 누르면 접는다', async () => {
+      await b.click('[data-path="/b"]');
+      await b.waitFor('tree.children.length === 8');
+      assert.deepEqual(await rows(), ['▸ 나', '▸ A', '▾ b', '하위.md', '2.md', '10.md', '가.md', 'Z.md']);
+      assert.equal(await b.eval(`document.querySelector('[data-path="/b/하위.md"]').style.paddingLeft`), '26px');
+      await b.click('[data-path="/b"]');
+      await b.waitFor('tree.children.length === 7');
+      assert.equal((await rows())[2], '▸ b');
+    });
+
+    test('X03 파일을 누르면 열리고(CRLF→LF), 트리에서 강조, 편집창 포커스', async () => {
+      await b.click('[data-path="/가.md"]');
+      await b.waitFor('doc.path === "/가.md"');
+      const r = await b.eval(`({ v: ta.value, title: document.title, eol: doc.eol, focused: document.activeElement === ta })`);
+      assert.deepEqual(r, { v: '# 가\n본문\n', title: '가.md — LiteMD', eol: '\r\n', focused: true });
+      assert.deepEqual(await current(), ['/가.md']);
+    });
+
+    test('X04 고친 채 다른 파일을 누르면 확인창, 취소하면 그대로', async () => {
+      await type('수정');
+      await b.eval('__fs.confirmAnswer = false');
+      await b.click('[data-path="/2.md"]');
+      const r = await b.eval('({ confirms: __fs.confirms.length, path: doc.path, v: ta.value })');
+      assert.deepEqual(r, { confirms: 1, path: '/가.md', v: '수정# 가\n본문\n' });
+    });
+
+    test('X05 Ctrl+S: 트리에서 연 파일에 대화상자 없이 덮어쓰기(CRLF 유지)', async () => {
+      await b.press('s', { ctrl: true });
+      await b.waitFor('__fs.writes.length === 1');
+      const r = await b.eval('({ w: __fs.writes[0], saveAs: __fs.saveAs.length, title: document.title })');
+      assert.deepEqual(r, { w: { name: '가.md', text: '수정# 가\r\n본문\r\n' }, saveAs: 0, title: '가.md — LiteMD' });
+    });
+
+    test('X06 새 문서 Ctrl+S: 대화상자가 열린 폴더에서 시작, 저장하면 트리에 새 파일이 강조돼 보인다', async () => {
+      await setDoc('새 노트 내용▮');
+      await b.eval(`__fs.saveName = '새 노트.md'`);
+      await b.press('s', { ctrl: true });
+      await b.waitFor('[...tree.children].some(r => r.dataset.path === "/새 노트.md")');
+      const r = await b.eval('({ startInIsFolder: __fs.startIn === __fs.root, path: doc.path })');
+      assert.deepEqual(r, { startInIsFolder: true, path: '/새 노트.md' });
+      assert.deepEqual(await current(), ['/새 노트.md']);
+    });
+
+    test('X07 [×]: 폴더만 닫고 열린 문서는 그대로', async () => {
+      await b.click('#close-folder');
+      const r = await b.eval('({ hidden: side.hidden, rows: tree.children.length, name: doc.name, v: ta.value })');
+      assert.deepEqual(r, { hidden: true, rows: 0, name: '새 노트.md', v: '새 노트 내용' });
+    });
+
+    test('X08 폴더 선택을 취소하면 알림 없이 그대로', async () => {
+      await b.eval('__fs.abort = true');
+      await b.click('#folder');
+      await sleep(50);
+      const r = await b.eval('({ hidden: side.hidden, alerts: __fs.alerts.length })');
+      assert.deepEqual(r, { hidden: true, alerts: 0 });
+    });
+
     // 여기부터는 File System Access API를 없앤다 — 뒤에 다른 테스트를 붙이려면 stubFiles()부터
     test('B19 File System Access API가 없으면 파일 선택으로 연다', async () => {
       await setDoc('▮');
@@ -283,6 +403,13 @@ for (const [label, exe] of BROWSERS) {
       await b.waitFor('__fs.downloads.length === 1');
       const r = await b.eval(`(async () => ({ name: __fs.downloads[0], text: await __fs.blob.text(), title: document.title }))()`);
       assert.deepEqual(r, { name: 'm.md', text: '추가 폰에서 연 글\r\n', title: 'm.md — LiteMD' });
+    });
+
+    // 페이지를 새로 여니까 맨 마지막에 둔다
+    test('X09 showDirectoryPicker가 없는 브라우저에서는 [폴더] 버튼을 숨긴다', async () => {
+      await b.send('Page.addScriptToEvaluateOnNewDocument', { source: 'window.showDirectoryPicker = undefined;' });
+      await b.open(PAGE);
+      assert.equal(await b.eval(`document.getElementById('folder').hidden`), true);
     });
   });
 }

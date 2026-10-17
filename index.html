@@ -14,12 +14,21 @@ html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg);
   font: 14px/1.5 system-ui, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
 header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
-#name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#name, #folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #name.dirty::before { content: "• "; color: var(--accent); }
 button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px;
   padding: 2px 10px; cursor: pointer; }
 button:hover { border-color: var(--muted); }
-textarea { flex: 1; display: block; width: 100%; max-width: 48rem; margin: 0 auto; padding: 24px 16px 40vh;
+main { flex: 1; display: flex; min-height: 0; }
+aside { flex: none; width: 240px; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
+aside[hidden] { display: none; }
+.side-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; font-weight: 600; }
+#tree { flex: 1; overflow: auto; padding-bottom: 24px; }
+.row { display: block; width: 100%; text-align: left; border: 0; border-radius: 0; padding: 2px 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.row:hover { background: var(--line); }
+.row.current { background: var(--line); color: var(--accent); }
+textarea { flex: 1; display: block; min-width: 0; width: 100%; max-width: 48rem; margin: 0 auto; padding: 24px 16px 40vh;
   border: 0; outline: 0; resize: none; background: none; color: inherit; tab-size: 2;
   font: 16px/1.7 "Cascadia Mono", Consolas, "D2Coding", ui-monospace, "Malgun Gothic", monospace; }
 textarea::placeholder { color: var(--muted); }
@@ -28,11 +37,21 @@ textarea::placeholder { color: var(--muted); }
 <body>
 <header>
   <span id="name">제목 없음</span>
+  <button id="folder" type="button" title="폴더 열기">폴더</button>
   <button id="open" type="button" title="열기 (Ctrl+O)">열기</button>
   <button id="save" type="button" title="저장 (Ctrl+S) · Shift+클릭은 다른 이름으로 (크롬은 Ctrl+Shift+S도)">저장</button>
 </header>
-<textarea id="ed" aria-label="편집창" spellcheck="false" autocomplete="off" autocapitalize="off" autofocus
-  placeholder="여기에 쓰세요.&#10;&#10;Ctrl+O 열기 · Ctrl+S 저장 · Enter 목록 이어쓰기 · Tab 들여쓰기"></textarea>
+<main>
+  <aside id="side" hidden>
+    <div class="side-head">
+      <span id="folder-name"></span>
+      <button id="close-folder" type="button" title="폴더 닫기">×</button>
+    </div>
+    <nav id="tree" aria-label="파일 목록"></nav>
+  </aside>
+  <textarea id="ed" aria-label="편집창" spellcheck="false" autocomplete="off" autocapitalize="off" autofocus
+    placeholder="여기에 쓰세요.&#10;&#10;Ctrl+O 열기 · Ctrl+S 저장 · Enter 목록 이어쓰기 · Tab 들여쓰기"></textarea>
+</main>
 <input id="file" type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden>
 
 <script id="logic">
@@ -152,19 +171,39 @@ function shortcutKey(key, code) {
   if (/^[a-z]$/i.test(key)) return key.toLowerCase();
   return /^Key[A-Z]$/.test(code) ? code.slice(3).toLowerCase() : '';
 }
+
+// 탐색기에 보일 항목: 점으로 시작하지 않고, 폴더이거나 마크다운·텍스트 파일
+function isListed(name, kind) {
+  if (name.startsWith('.')) return false;
+  return kind === 'directory' || /\.(md|markdown|txt)$/i.test(name);
+}
+
+// 폴더 먼저, 그다음 한국어 이름순(숫자는 크기대로, 대소문자 무시)
+function compareEntries(a, b) {
+  if (a.kind !== b.kind) return a.kind === 'directory' ? -1 : 1;
+  return a.name.localeCompare(b.name, 'ko', { numeric: true, sensitivity: 'base' });
+}
 </script>
 
 <script>
-// 화면 — 편집창, 파일 입출력, 단축키
+// 화면 — 편집창, 파일 입출력, 탐색기, 단축키
 const ta = document.getElementById('ed');
 const nameEl = document.getElementById('name');
 const picker = document.getElementById('file');
+const side = document.getElementById('side');
+const tree = document.getElementById('tree');
 const UNTITLED = '제목 없음';
 const TYPES = [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }];
-let doc = { handle: null, name: '', saved: '', eol: '\n' };
+let doc = { handle: null, name: '', saved: '', eol: '\n', path: '' };
+let root = null; // 열린 폴더: { handle, open: 펼쳐 둔 하위 폴더 경로들 }
+let renderSeq = 0;
 
 function isDirty() {
   return ta.value !== doc.saved;
+}
+
+function confirmDiscard() {
+  return !isDirty() || confirm('저장하지 않은 변경이 있어요. 버리고 열까요?');
 }
 
 function refresh() {
@@ -188,22 +227,29 @@ function applyEdit(ed) {
   ta.setSelectionRange(ed.selStart, ed.selEnd);
 }
 
-function load(handle, name, raw) {
-  doc = { handle, name, saved: normalizeEol(raw), eol: detectEol(raw) };
+function load(handle, name, raw, path = '') {
+  doc = { handle, name, saved: normalizeEol(raw), eol: detectEol(raw), path };
   ta.value = doc.saved; // 다른 파일이니 Ctrl+Z 기록이 지워지는 게 맞다
   ta.setSelectionRange(0, 0);
   ta.scrollTop = 0;
   ta.focus();
   refresh();
+  markCurrent();
+}
+
+// 열린 폴더 안의 파일이면 트리 경로('/하위/파일.md'), 아니면 ''
+async function locate(handle) {
+  const parts = root && handle ? await root.handle.resolve(handle) : null;
+  return parts ? '/' + parts.join('/') : '';
 }
 
 async function openFile() {
-  if (isDirty() && !confirm('저장하지 않은 변경이 있어요. 버리고 열까요?')) return;
+  if (!confirmDiscard()) return;
   if (!window.showOpenFilePicker) return picker.click();
   try {
-    const [handle] = await window.showOpenFilePicker({ types: TYPES });
+    const [handle] = await window.showOpenFilePicker({ types: TYPES, startIn: doc.handle || root?.handle });
     const file = await handle.getFile();
-    load(handle, file.name, await file.text());
+    load(handle, file.name, await file.text(), await locate(handle));
   } catch (err) {
     if (err.name !== 'AbortError') alert('열지 못했어요: ' + err.message);
   }
@@ -236,10 +282,14 @@ async function save(as) {
     if (doc.handle && !as) {
       await write(doc.handle, text);
     } else if (window.showSaveFilePicker) {
-      const handle = await window.showSaveFilePicker({ suggestedName: doc.name || UNTITLED + '.md', types: TYPES });
+      const handle = await window.showSaveFilePicker({
+        suggestedName: doc.name || UNTITLED + '.md', types: TYPES, startIn: doc.handle || root?.handle,
+      });
       await write(handle, text);
       doc.handle = handle;
       doc.name = handle.name;
+      doc.path = await locate(handle);
+      renderTree(); // 새로 만든 파일이 트리에 보이게
     } else {
       doc.name = doc.name || UNTITLED + '.md';
       download(doc.name, text);
@@ -250,6 +300,87 @@ async function save(as) {
     if (err.name !== 'AbortError') alert('저장하지 못했어요: ' + err.message);
   }
 }
+
+// ── 탐색기 ──
+
+async function openFolder() {
+  try {
+    const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
+    root = { handle, open: new Set() };
+    document.getElementById('folder-name').textContent = handle.name;
+    side.hidden = false;
+    doc.path = await locate(doc.handle);
+    await renderTree();
+  } catch (err) {
+    if (err.name !== 'AbortError') alert('폴더를 열지 못했어요: ' + err.message);
+  }
+}
+
+function closeFolder() {
+  root = null;
+  side.hidden = true;
+  tree.replaceChildren();
+  doc.path = '';
+}
+
+// 펼쳐 둔 폴더까지 다시 읽어 트리 전체를 새로 그린다. 늦게 끝난 옛 그리기는 버린다.
+async function renderTree() {
+  if (!root) return;
+  const seq = ++renderSeq;
+  try {
+    const rows = await listRows(root.handle, '', 0);
+    if (seq !== renderSeq) return;
+    tree.replaceChildren(...rows);
+    markCurrent();
+  } catch (err) {
+    alert('폴더를 읽지 못했어요: ' + err.message);
+  }
+}
+
+async function listRows(dir, path, depth) {
+  const entries = [];
+  for await (const entry of dir.values()) {
+    if (isListed(entry.name, entry.kind)) entries.push(entry);
+  }
+  entries.sort(compareEntries);
+  const rows = [];
+  for (const entry of entries) {
+    const p = path + '/' + entry.name;
+    const isDir = entry.kind === 'directory';
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'row';
+    row.dataset.path = p;
+    row.title = p.slice(1);
+    row.style.paddingLeft = 12 + depth * 14 + 'px'; // 12px = 사이드바 머리글과 같은 시작선
+    row.textContent = (isDir ? (root.open.has(p) ? '▾ ' : '▸ ') : '') + entry.name;
+    row.addEventListener('click', () => (isDir ? toggleDir(p) : openEntry(entry, p)));
+    rows.push(row);
+    if (isDir && root.open.has(p)) rows.push(...(await listRows(entry, p, depth + 1)));
+  }
+  return rows;
+}
+
+function toggleDir(path) {
+  if (!root.open.delete(path)) root.open.add(path);
+  renderTree();
+}
+
+async function openEntry(handle, path) {
+  if (!confirmDiscard()) return;
+  try {
+    const file = await handle.getFile();
+    load(handle, file.name, await file.text(), path);
+  } catch (err) {
+    alert('열지 못했어요: ' + err.message);
+  }
+}
+
+function markCurrent() {
+  for (const row of tree.children) row.classList.toggle('current', row.dataset.path === doc.path);
+}
+
+// ── 키·버튼 ──
 
 ta.addEventListener('keydown', e => {
   if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중: 가로채면 마지막 글자가 겹친다
@@ -283,11 +414,15 @@ addEventListener('beforeunload', e => {
   e.returnValue = '';
 });
 
+// 버튼(위·트리)을 눌러도 편집창 포커스·커서가 그대로
+document.addEventListener('mousedown', e => {
+  if (e.target.closest('button')) e.preventDefault();
+});
+document.getElementById('folder').addEventListener('click', openFolder);
+document.getElementById('close-folder').addEventListener('click', closeFolder);
 document.getElementById('open').addEventListener('click', openFile);
 document.getElementById('save').addEventListener('click', e => save(e.shiftKey));
-for (const button of document.querySelectorAll('header button')) {
-  button.addEventListener('mousedown', e => e.preventDefault()); // 눌러도 편집창 포커스·커서가 그대로
-}
+document.getElementById('folder').hidden = !window.showDirectoryPicker; // 폰·파이어폭스·사파리엔 없다
 refresh();
 ta.focus(); // autofocus를 건너뛰는 환경(headless 크롬 등)이 있어서 한 번 더
 </script>
