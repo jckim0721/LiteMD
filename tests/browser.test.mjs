@@ -322,6 +322,25 @@ for (const [label, exe] of BROWSERS) {
       assert.equal(await b.eval(`!!document.querySelector('.cm-search')`), false);
     });
 
+    test('F10 글을 고치고 레벨 접기·펼침을 오가도 헤딩마다 접기 표시가 붙는다', async () => {
+      await setDoc('# 회고⏎⏎## 만든 것⏎⏎- [ ] 공개▮⏎⏎## 배운 것⏎⏎### 한글 조합⏎조합 중 Enter.⏎⏎### Ctrl+Z⏎execCommand.');
+      const heads = ['# 회고', '## 만든 것', '## 배운 것', '### 한글 조합', '### Ctrl+Z'];
+      const marked = async () => (await b.eval('lite.foldableLines()')).filter(t => t.startsWith('#'));
+      assert.deepEqual(await marked(), heads);
+      await b.press('Enter');
+      await type('데모');
+      await b.press('Enter');
+      await b.press('Tab');
+      await type('하위');
+      await b.press('Enter');
+      await b.press('Enter');
+      await b.press('Enter');
+      await b.click('[data-level="2"]');
+      await b.click('[data-level="0"]');
+      await b.waitFor('lite.folded().length === 0');
+      assert.deepEqual(await marked(), heads);
+    });
+
     // 사용자가 다크 모드에서 찾은 버그(10/18): 검색칸·버튼이 밝은 바탕에 밝은 글자라 안 보였다
     for (const scheme of ['light', 'dark']) {
       test(`F09 검색 패널 글자가 배경과 구분된다(${scheme}, 대비 4.5:1 이상)`, async t => {

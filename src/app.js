@@ -4,7 +4,7 @@ import { EditorState, EditorSelection } from '@codemirror/state';
 import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, insertNewline, isolateHistory } from '@codemirror/commands';
 import {
-  foldGutter, codeFolding, foldKeymap, unfoldCode, syntaxHighlighting, HighlightStyle, indentUnit, foldedRanges,
+  foldGutter, codeFolding, foldKeymap, unfoldCode, syntaxHighlighting, HighlightStyle, indentUnit, foldedRanges, foldable,
 } from '@codemirror/language';
 import { search, searchKeymap } from '@codemirror/search';
 import { markdownLanguage } from '@codemirror/lang-markdown';
@@ -385,4 +385,13 @@ window.lite = {
     return out;
   },
   headings: () => headingSections(view.state),
+  // 접기 거터에 ▾가 붙는 줄(= CodeMirror가 접을 수 있다고 보는 줄)의 글
+  foldableLines() {
+    const out = [];
+    for (let n = 1; n <= view.state.doc.lines; n++) {
+      const line = view.state.doc.line(n);
+      if (foldable(view.state, line.from, line.to)) out.push(line.text);
+    }
+    return out;
+  },
 };

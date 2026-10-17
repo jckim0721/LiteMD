@@ -4,11 +4,13 @@ HTML 파일 한 장으로 된 마크다운 에디터. CodeMirror 6을 번들해�
 
 *A Markdown editor in a single HTML file — heading folding, no network requests, works offline.*
 
-![LiteMD](docs/screenshot.png)
+**써 보기:** https://jckim0721.github.io/LiteMD/ · 0호(textarea 한 장, 16.5KB): https://jckim0721.github.io/LiteMD/v1/
+
+![LiteMD 데모 — 목록 이어쓰기·Tab·헤딩 접기](docs/demo.png)
 
 ## 쓰는 법
 
-`index.html`을 크롬이나 엣지로 연다. 설치 없음.
+위 주소를 크롬이나 엣지로 열거나, `index.html`을 내려받아 연다. 설치 없음, 인터넷 없이도 돈다.
 
 | 키·버튼 | 동작 |
 |---|---|
@@ -33,8 +35,8 @@ HTML 파일 한 장으로 된 마크다운 에디터. CodeMirror 6을 번들해�
 
 ## 버전
 
-- **v2 (지금):** CodeMirror 6 — 헤딩 접기·레벨 접기·찾기, 기본 강조
-- **v1.0 (태그):** textarea 한 장, 외부 라이브러리 0, 16.5KB. 목록 이어쓰기·들여쓰기·열기/저장·폴더 탐색기
+- **v2 (지금):** CodeMirror 6 — 헤딩 접기·레벨 접기·찾기, 기본 강조. 하위 항목이 있는 목록·코드 블록도 접힌다(마크다운 기본 접기)
+- **v1.0 (태그, `/v1/`):** textarea 한 장, 외부 라이브러리 0, 16.5KB. 목록 이어쓰기·들여쓰기·열기/저장·폴더 탐색기
 
 라이브 프리뷰(커서 없는 줄은 기호를 숨기고 렌더링처럼)는 다음 차례다.
 
@@ -62,7 +64,9 @@ Node 22 이상. 브라우저 테스트는 크롬·엣지가 기본 설치 경로
 
 ## 라이선스
 
-번들에 들어간 라이브러리(CodeMirror·Lezer 등, 모두 MIT)의 고지문은 `index.html` 맨 위 주석에 있다.
+MIT — [LICENSE](LICENSE). 번들에 들어간 라이브러리(CodeMirror·Lezer 등, 모두 MIT)의 고지문은 `index.html` 맨 위 주석에 있다.
+
+`docs/demo.png`는 움직이는 PNG(APNG)다. `node tools/demo.mjs`가 실제 조작을 찍어 만든다.
 
 ## 왜 만들었나
 
