@@ -1,5 +1,7 @@
 # LiteMD
 
+**한국어** · [English](README.en.md)
+
 HTML 파일 한 장으로 된 마크다운 에디터. 옵시디언처럼 쓰면서 바로 보이는 라이브 프리뷰, 다 그린 읽기 화면, 헤딩 단위 접기. CodeMirror 6을 번들해서 외부 요청 없이 오프라인으로 돈다(약 380KB).
 
 *A Markdown editor in a single HTML file — live preview, reading view, heading folding, no network requests, works offline.*

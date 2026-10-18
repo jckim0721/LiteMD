@@ -1,6 +1,6 @@
 # CLAUDE.md — LiteMD
 
-HTML 파일 한 장으로 된 마크다운 에디터. CodeMirror 6을 번들한다. v3(브랜치 `v3`, 2호)는 라이브 프리뷰·읽기 프리뷰, v2(1호, `main`·Pages 루트)는 헤딩 접기·찾기, v1(태그 `v1.0`, 0호, Pages `/v1/`)은 textarea 한 장이었다. GitHub `jckim0721/LiteMD`(MIT).
+HTML 파일 한 장으로 된 마크다운 에디터. CodeMirror 6을 번들한다. v3(2호, 태그 `v3.0`, `main`·Pages 루트)는 라이브 프리뷰·읽기 프리뷰, v2(1호, 태그 `v2.0`)는 헤딩 접기·찾기, v1(0호, 태그 `v1.0`, Pages `/v1/`)은 textarea 한 장이었다. GitHub `jckim0721/LiteMD`(MIT), 판마다 릴리스.
 
 ## 단일 진실원 (스펙·트래커)
 
@@ -48,3 +48,9 @@ tests/cdp.mjs           CDP 클라이언트(Node 22 내장 WebSocket·fetch)
 - 라이브 프리뷰는 줄 단위: 커서·선택이 걸친 줄은 꾸미지 않는다. 그래서 한글 조합 중인 줄은 늘 원문이다 — 이 규칙을 깨면 조합이 망가질 수 있다
 - 읽기 화면 HTML은 `renderMarkdown`만 만든다(글자는 전부 이스케이프, 주소는 `safeUrl`). `innerHTML`에 다른 걸 넣지 않는다
 - 색은 CSS 변수로. 글자 대비는 라이트·다크 둘 다 4.5:1 이상(F09·P08이 잰다)
+
+## 문서·릴리스
+
+- 사람이 읽는 문서는 한국어·영어 두 벌이다: `README.md`↔`README.en.md`, `CHANGELOG.md`↔`CHANGELOG.en.md`. 하나를 고치면 짝도 같이 고친다
+- 새 판: 두 CHANGELOG에 그 판 구간과 비교표 열을 쓴다 → 태그 `vX.Y` → 빌드한 `index.html`을 `LiteMD-vX.Y.html`로 붙여 `gh release create`. 본문은 실행 안내(한·영 한 줄씩) + 한국어 CHANGELOG의 그 판 구간·비교표 + `---` + 영어 같은 구간, 제목은 `vX.Y — N호: … · Build #N: …`
+- 받은 파일 하나로 돌아야 한다(폐쇄망에서 쓴다). 올린 뒤 내려받아 해시가 빌드와 같은지, 오프라인으로 열어 도는지 본다
