@@ -51,6 +51,6 @@ tests/cdp.mjs           CDP 클라이언트(Node 22 내장 WebSocket·fetch)
 
 ## 문서·릴리스
 
-- 사람이 읽는 문서는 한국어·영어 두 벌이다: `README.md`↔`README.en.md`, `CHANGELOG.md`↔`CHANGELOG.en.md`. 하나를 고치면 짝도 같이 고친다
+- 사람이 읽는 문서는 한국어·영어 두 벌이다: `README.md`(영어 — GitHub 첫 화면)↔`README.ko.md`, `CHANGELOG.md`(한국어)↔`CHANGELOG.en.md`. 하나를 고치면 짝도 같이 고친다
 - 새 판: 두 CHANGELOG에 그 판 구간과 비교표 열을 쓴다 → 태그 `vX.Y` → 빌드한 `index.html`을 `LiteMD-vX.Y.html`로 붙여 `gh release create`. 본문은 실행 안내(한·영 한 줄씩) + 한국어 CHANGELOG의 그 판 구간·비교표 + `---` + 영어 같은 구간, 제목은 `vX.Y — N호: … · Build #N: …`
 - 받은 파일 하나로 돌아야 한다(폐쇄망에서 쓴다). 올린 뒤 내려받아 해시가 빌드와 같은지, 오프라인으로 열어 도는지 본다
