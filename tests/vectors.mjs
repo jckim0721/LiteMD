@@ -112,6 +112,25 @@ export const liveVectors = [
   { id: 'LP17', doc: '- [ ] **중요** 할 일⏎▮', expect: '☐ 중요 할 일 ⏎ ', note: '할 일 안 강조' },
 ];
 
+// v4 꺾인 줄 맞춤 — 볼트 `LiteMD_v4_작업계획서` §6 HP 표와 같아야 한다. ⇥ = 탭
+export const hangVectors = [
+  { id: 'HP01', line: '그냥 글', expect: 0, note: '들여쓰기 없음' },
+  { id: 'HP02', line: '  들여쓴 글', expect: 2, note: '공백' },
+  { id: 'HP03', line: '⇥탭 글', expect: 1, note: '탭' },
+  { id: 'HP04', line: '- 항목', expect: 2, note: '글머리' },
+  { id: 'HP05', line: '    - 하위', expect: 6, note: '들여쓴 글머리' },
+  { id: 'HP06', line: '12. 번호', expect: 4, note: '번호' },
+  { id: 'HP07', line: '3) 번호', expect: 3, note: '괄호 번호' },
+  { id: 'HP08', line: '- [ ] 할 일', expect: 6, note: '할 일 칸' },
+  { id: 'HP09', line: '  * [x] 끝', expect: 8, note: '들여쓴 끝난 할 일' },
+  { id: 'HP10', line: '-붙임', expect: 0, note: '표시 뒤 공백이 없으면 목록 아님' },
+  { id: 'HP11', line: '- - -', expect: 0, note: '수평선' },
+  { id: 'HP12', line: '> 인용', expect: 0, note: '인용은 범위 밖' },
+  { id: 'HP13', line: '# 제목', expect: 0, note: '헤딩' },
+  { id: 'HP14', line: '-   여러 칸', expect: 4, note: '표시 뒤 공백 여러 개' },
+  { id: 'HP15', line: '  ⇥섞임', expect: 3, note: '공백·탭이 섞인 들여쓰기' },
+];
+
 // v3 읽기 프리뷰 — 볼트 `LiteMD_v3_작업계획서` §6 R 표와 같아야 한다
 const A = ' target="_blank" rel="noopener noreferrer"';
 export const renderVectors = [

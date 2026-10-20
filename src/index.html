@@ -17,8 +17,11 @@
 html, body { height: 100%; margin: 0; }
 body { display: flex; flex-direction: column; background: var(--bg); color: var(--fg);
   font: 14px/1.5 system-ui, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
-header { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
-#name, #folder-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 좁은 창·폰에서는 버튼이 다음 줄로 넘어간다(가로 스크롤 없음). 파일 이름 칸은 6em까지 지킨다 */
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 6px 12px; border-bottom: 1px solid var(--line); }
+#name { flex: 1 1 6em; }
+#folder-name { flex: 1; }
+#name, #folder-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #name.dirty::before { content: "• "; color: var(--accent); }
 button { font: inherit; color: inherit; background: none; border: 1px solid var(--line); border-radius: 6px;
   padding: 2px 10px; cursor: pointer; }
@@ -30,7 +33,12 @@ button[aria-pressed="true"] { color: var(--accent); border-color: var(--accent);
 main { flex: 1; display: flex; min-height: 0; }
 aside { flex: none; width: 240px; display: flex; flex-direction: column; border-right: 1px solid var(--line); }
 aside[hidden] { display: none; }
-.side-head { display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 12px; font-weight: 600; }
+.side-head { display: flex; align-items: center; gap: 4px; padding: 6px 8px 6px 12px; font-weight: 600; }
+.side-head button { padding: 2px 7px; }
+/* 탐색기 접기: [›]만 남은 좁은 띠. 폴더는 열린 채라 펴면 트리가 그대로 */
+aside.collapsed { width: auto; }
+aside.collapsed .side-head { padding: 6px 4px; }
+aside.collapsed .side-head > :not(#collapse), aside.collapsed #tree { display: none; }
 #tree { flex: 1; overflow: auto; padding-bottom: 24px; }
 .row { display: block; width: 100%; text-align: left; border: 0; border-radius: 0; padding: 2px 8px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -39,13 +47,17 @@ aside[hidden] { display: none; }
 #editor { flex: 1; min-width: 0; display: flex; justify-content: center; }
 #editor[hidden] { display: none; }
 #editor .cm-editor { width: 100%; max-width: 50rem; }
+/* 넓게(노션의 '전체 너비'): 가운데 기둥 대신 창 너비를 다 쓴다 */
+body.wide #editor .cm-editor, body.wide #preview .page { max-width: none; }
 /* 읽기 프리뷰: 편집 화면과 같은 폭, 읽기 편한 글꼴 */
 #preview { flex: 1; min-width: 0; overflow: auto; outline: 0; padding: 24px 16px 40vh;
   font: 16px/1.75 system-ui, "Segoe UI", "Malgun Gothic", "Apple SD Gothic Neo", sans-serif; }
 #preview[hidden] { display: none; }
 #preview .page { max-width: 46rem; margin: 0 auto; } /* 글 전체를 한 기둥으로: 표·인용도 본문과 같은 왼쪽 선 */
-#preview h1, #preview h2, #preview h3 { line-height: 1.3; margin-top: 1.4em; }
-#preview h1 { font-size: 1.7em; } #preview h2 { font-size: 1.35em; } #preview h3 { font-size: 1.15em; }
+#preview h1, #preview h2, #preview h3, #preview h4 { line-height: 1.3; margin-top: 1.4em; }
+/* 헤딩은 단계마다 1.15배 이상 차이 난다(v4). h5·h6은 브라우저 기본이면 본문보다 작아서 본문 크기로 */
+#preview h1 { font-size: 2em; } #preview h2 { font-size: 1.5em; } #preview h3 { font-size: 1.25em; }
+#preview h4 { font-size: 1.1em; } #preview h5, #preview h6 { font-size: 1em; }
 #preview a { color: var(--accent); }
 #preview code { font-family: "Cascadia Mono", Consolas, "D2Coding", ui-monospace, monospace; font-size: 0.9em;
   background: var(--code); padding: 1px 4px; border-radius: 4px; }
@@ -65,6 +77,7 @@ aside[hidden] { display: none; }
   <span id="name">제목 없음</span>
   <button id="live" type="button" aria-pressed="true" title="라이브 프리뷰 켜기·끄기">라이브</button>
   <button id="read" type="button" aria-pressed="false" title="읽기 프리뷰 (Ctrl+E)">읽기</button>
+  <button id="wide" type="button" aria-pressed="false" title="넓게 — 창 너비를 다 쓴다(노션의 전체 너비)">넓게</button>
   <span class="levels" role="group" aria-label="헤딩 접기">
     <button type="button" data-level="1" title="H1까지만 보기">H1</button>
     <button type="button" data-level="2" title="H2까지만 보기">H2</button>
@@ -72,6 +85,7 @@ aside[hidden] { display: none; }
     <button type="button" data-level="0" title="모두 펼치기">펼침</button>
   </span>
   <button id="folder" type="button" title="폴더 열기">폴더</button>
+  <button id="new" type="button" title="새 파일 — 처음 저장할 때 위치를 고른다">새 파일</button>
   <button id="open" type="button" title="열기 (Ctrl+O)">열기</button>
   <button id="save" type="button" title="저장 (Ctrl+S) · Shift+클릭은 다른 이름으로 (크롬은 Ctrl+Shift+S도)">저장</button>
 </header>
@@ -79,6 +93,8 @@ aside[hidden] { display: none; }
   <aside id="side" hidden>
     <div class="side-head">
       <span id="folder-name"></span>
+      <button id="new-here" type="button" title="새 파일 — 저장 창이 보던 파일의 폴더에서 열린다">+</button>
+      <button id="collapse" type="button" title="탐색기 접기" aria-expanded="true">‹</button>
       <button id="close-folder" type="button" title="폴더 닫기">×</button>
     </div>
     <nav id="tree" aria-label="파일 목록"></nav>

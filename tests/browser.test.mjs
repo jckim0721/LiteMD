@@ -1,4 +1,4 @@
-// 브라우저 테스트(B·X·F) — 크롬·엣지 headless에 실제 키·마우스 이벤트를 보내 화면 동작을 확인한다(v2, CodeMirror).
+// 브라우저 테스트(B·X·F·P·D·N) — 크롬·엣지 headless에 실제 키·마우스 이벤트를 보내 화면 동작을 확인한다(v2부터 CodeMirror).
 // 편집기 상태는 앱이 열어 둔 window.lite로 읽고 초기화한다. 파일 대화상자는 띄울 수 없으니
 // showOpenFilePicker·showSaveFilePicker·showDirectoryPicker를 페이지 안에서 가짜로 바꿔 끼운다.
 import { describe, test, before, after } from 'node:test';
@@ -481,6 +481,143 @@ for (const [label, exe] of BROWSERS) {
       assert.equal(await b.eval('__fs.writes[0].text'), '읽는 중');
     });
 
+    // ── 꺾인 줄 맞춤·넓게·헤딩 크기·상단 바(D, v4) ──
+
+    const LONG = '가나다라마바사아자차카타파하 '.repeat(6).trim(); // 800px 창의 편집 폭에서 세 줄로 꺾인다
+    const wrapOf = n => b.eval(`lite.wrap(${n})`);
+    // 꺾인 줄 맞춤은 다음 프레임에 재서 건다 → 맞을 때까지 기다린다(시간이 넘으면 마지막 값으로 실패를 보여 준다)
+    const aligned = async n => {
+      await b.waitFor(`(r => r.wrap !== null && r.text > 0 && Math.abs(r.wrap - r.text) <= 1)(lite.wrap(${n}))`).catch(() => {});
+      return wrapOf(n);
+    };
+    const assertAligned = r => assert.ok(r.wrap !== null && r.text > 0 && Math.abs(r.wrap - r.text) <= 1, JSON.stringify(r));
+    const assertFlush = r => assert.ok(r.wrap !== null && Math.abs(r.wrap) <= 1, JSON.stringify(r));
+
+    test('D01 꺾인 하위 글머리(라이브): 꺾인 줄이 • 뒤 글 시작에 맞는다', async t => {
+      await setDoc(`  - ${LONG}⏎▮`);
+      const r = await aligned(1);
+      t.diagnostic(JSON.stringify(r));
+      assertAligned(r);
+      assert.equal((await lineTexts())[0].slice(0, 4), '  • ');
+    });
+
+    test('D02 같은 줄로 커서가 들어가 원문(- )이 드러나도 맞는다', async t => {
+      await b.eval('lite.view.dispatch({ selection: { anchor: 8 } })');
+      await b.waitFor(`document.querySelector('.cm-content .cm-line').textContent.startsWith('  - ')`);
+      const r = await aligned(1);
+      t.diagnostic(JSON.stringify(r));
+      assertAligned(r);
+    });
+
+    test('D03 꺾인 할 일(라이브 체크박스): 꺾인 줄이 체크박스 뒤 글 시작에 맞는다', async t => {
+      await setDoc(`- [ ] ${LONG}⏎▮`);
+      await b.waitFor(`!!document.querySelector('.cm-lp-task')`);
+      const r = await aligned(1);
+      t.diagnostic(JSON.stringify(r));
+      assertAligned(r);
+    });
+
+    test('D04 들여쓴 글·번호 목록·탭으로 들여쓴 줄도 글 시작에 맞는다', async t => {
+      await setDoc(`    ${LONG}⏎12. ${LONG}⏎⇥${LONG}⏎▮`);
+      const rs = [await aligned(1), await aligned(2), await aligned(3)];
+      t.diagnostic(JSON.stringify(rs));
+      rs.forEach(assertAligned);
+    });
+
+    test('D05 들여쓰기 없는 긴 줄·긴 헤딩은 꺾인 줄이 맨 앞(맞춤 없음)', async t => {
+      await setDoc(`${LONG}⏎# ${LONG}⏎▮`);
+      await settle();
+      await settle();
+      const rs = [await wrapOf(1), await wrapOf(2)];
+      t.diagnostic(JSON.stringify(rs));
+      rs.forEach(assertFlush);
+      assert.equal(await b.eval(`document.querySelectorAll('.cm-hang').length`), 0);
+    });
+
+    test('D06 맞출 폭이 편집 폭의 절반을 넘으면 맞추지 않는다', async t => {
+      await setDoc(`${' '.repeat(60)}${LONG}⏎▮`);
+      await settle();
+      await settle();
+      const r = await wrapOf(1);
+      t.diagnostic(JSON.stringify(r));
+      assertFlush(r);
+      assert.ok(r.text > 300, '글 시작은 첫 줄 오른쪽 멀리');
+    });
+
+    test('D07 꺾인 줄 맞춤은 보기만 바꾼다: 저장 내용이 원래 글 그대로', async () => {
+      const text = `  - ${LONG}\n- [ ] ${LONG}\n`;
+      await b.eval(`lite.reset(${JSON.stringify(text)}, ${text.length})`);
+      await stubFiles();
+      await aligned(1);
+      assert.equal(await b.eval(`document.querySelectorAll('.cm-hang').length`), 2);
+      await b.press('s', { ctrl: true });
+      await b.waitFor('__fs.writes.length === 1');
+      assert.equal(await b.eval('__fs.writes[0].text'), text);
+    });
+
+    test('D08 [넓게]: 편집·읽기 화면이 창 너비를 다 쓰고, 다시 누르면 원래대로', async t => {
+      await b.send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 900, deviceScaleFactor: 1, mobile: false });
+      try {
+        await setDoc('# 제목⏎본문▮');
+        const look = async () => {
+          const editor = await b.eval(`Math.round(document.querySelector('#editor .cm-editor').getBoundingClientRect().width)`);
+          await toggleReading();
+          const page = await b.eval(`Math.round(document.querySelector('#preview .page').getBoundingClientRect().width)`);
+          await toggleReading();
+          return { editor, page, pressed: await b.eval(`document.getElementById('wide').getAttribute('aria-pressed')`) };
+        };
+        const before = await look();
+        await b.click('#wide');
+        const on = await look();
+        await b.click('#wide');
+        const off = await look();
+        t.diagnostic(JSON.stringify({ before, on, off }));
+        assert.deepEqual(before, { editor: 800, page: 736, pressed: 'false' });
+        assert.ok(on.editor >= 1300 && on.page >= 1300 && on.pressed === 'true', JSON.stringify(on));
+        assert.deepEqual(off, before);
+      } finally {
+        await b.send('Emulation.clearDeviceMetricsOverride');
+      }
+    });
+
+    // 요소마다 처음 나오는 글자의 글꼴 크기(px)
+    const firstFontSizes = selector => b.eval(`[...document.querySelectorAll(${JSON.stringify(selector)})].map(el => {
+      const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, { acceptNode: n => (n.textContent.trim() ? 1 : 3) });
+      const node = w.nextNode();
+      return node ? parseFloat(getComputedStyle(node.parentElement).fontSize) : 0;
+    })`);
+    const steps = px => px.slice(1).map((x, i) => Math.round((px[i] / x) * 100) / 100); // [H1:H2, H2:H3, H3:본문]
+
+    test('D11 편집 화면 헤딩 크기: H1:H2, H2:H3, H3:본문 모두 1.15배 이상', async t => {
+      await setDoc('# 하나⏎## 둘⏎### 셋⏎본문⏎▮');
+      const px = (await firstFontSizes('.cm-content .cm-line')).slice(0, 4);
+      t.diagnostic(JSON.stringify({ px, steps: steps(px) }));
+      assert.ok(steps(px).every(r => r >= 1.15), JSON.stringify(px));
+    });
+
+    test('D12 읽기 화면 헤딩 크기: 같은 비 1.15배 이상', async t => {
+      await setDoc('# 하나⏎## 둘⏎### 셋⏎본문⏎▮');
+      await toggleReading();
+      const px = await b.eval(`['h1', 'h2', 'h3', 'p'].map(tag => parseFloat(getComputedStyle(document.querySelector('#preview ' + tag)).fontSize))`);
+      await toggleReading();
+      t.diagnostic(JSON.stringify({ px, steps: steps(px) }));
+      assert.ok(steps(px).every(r => r >= 1.15), JSON.stringify(px));
+    });
+
+    test('D13 창 360px: 가로 스크롤 없이 상단 버튼이 모두 창 안에', async t => {
+      await b.send('Emulation.setDeviceMetricsOverride', { width: 360, height: 740, deviceScaleFactor: 1, mobile: false });
+      try {
+        await settle();
+        const r = await b.eval(`({ scroll: document.documentElement.scrollWidth, inner: innerWidth,
+          out: [...document.querySelectorAll('header button')].filter(x => !x.hidden && x.getBoundingClientRect().right > innerWidth + 0.5)
+            .map(x => x.textContent) })`);
+        t.diagnostic(JSON.stringify(r));
+        assert.deepEqual(r, { scroll: 360, inner: 360, out: [] });
+      } finally {
+        await b.send('Emulation.clearDeviceMetricsOverride');
+      }
+    });
+
     // ── 폴더 탐색기(X) ──
 
     // 가짜 폴더: 숨길 것(.obsidian, 사진.png)과 정렬을 확인할 이름들. stubFiles() 다음에 부른다
@@ -516,6 +653,7 @@ for (const [label, exe] of BROWSERS) {
         dir('나', []),
         file('10.md', '열'), file('2.md', '둘'), file('사진.png', 'x'), file('가.md', '# 가\\r\\n본문\\r\\n'), file('Z.md', 'z'),
       ]);
+      fs.file = file; // 새 파일 테스트(N)의 저장 창 흉내가 쓴다
       window.showDirectoryPicker = async opts => {
         fs.dirOpts = opts;
         if (fs.abort) throw new DOMException('취소', 'AbortError');
@@ -604,6 +742,147 @@ for (const [label, exe] of BROWSERS) {
       assert.deepEqual(r, { hidden: true, alerts: 0 });
     });
 
+    // ── 탐색기 접기(D10)·새 파일(N, v4) ──
+
+    // 폴더를 열고 트리가 그려질 때까지. stubFiles()·stubFolder() 다음에 부른다
+    const openStubFolder = async () => {
+      await b.click('#folder');
+      await b.waitFor(`document.getElementById('tree').children.length > 0`);
+    };
+
+    test('D10 탐색기 [‹]: 좁은 띠로 접히고 편집 영역이 넓어진다, [›]로 펴면 트리 그대로, 폴더를 새로 열면 펴진다', async t => {
+      await setDoc('▮');
+      await stubFiles();
+      await stubFolder();
+      await openStubFolder();
+      await b.click('[data-path="/b"]');
+      await b.waitFor(`!!document.querySelector('[data-path="/b/하위.md"]')`);
+      const look = () => b.eval(`(() => {
+        const s = document.getElementById('side'), c = document.getElementById('collapse');
+        return { collapsed: s.classList.contains('collapsed'), tree: getComputedStyle(document.getElementById('tree')).display !== 'none',
+          side: Math.round(s.getBoundingClientRect().width), editor: Math.round(document.getElementById('editor').getBoundingClientRect().width),
+          label: c.textContent, expanded: c.getAttribute('aria-expanded') };
+      })()`);
+      const open = await look();
+      await b.click('#collapse');
+      const shut = await look();
+      await b.click('#collapse');
+      const again = await look();
+      t.diagnostic(JSON.stringify({ open, shut, again }));
+      assert.deepEqual([open.collapsed, open.tree, open.label, open.expanded], [false, true, '‹', 'true']);
+      assert.deepEqual([shut.collapsed, shut.tree, shut.label, shut.expanded], [true, false, '›', 'false']);
+      assert.ok(shut.side <= 48 && shut.editor > open.editor, JSON.stringify(shut));
+      assert.deepEqual(again, open);
+      assert.ok((await rows()).includes('하위.md'), '펼쳐 둔 하위 폴더가 그대로');
+      await b.click('#collapse');
+      await b.click('#folder'); // 접은 채 폴더를 새로 열면 펴진다
+      await b.waitFor(`!document.getElementById('side').classList.contains('collapsed')`);
+    });
+
+    // 저장 창 흉내: startIn이 가리키는 폴더(파일 손잡이면 그 파일의 폴더)에 새 파일을 만든다. stubFolder() 다음에 부른다
+    const stubSaveInto = () => b.eval(`(() => {
+      const fs = __fs;
+      const parentOf = (d, h) => {
+        for (const c of d.children) {
+          if (c === h) return d;
+          const p = c.kind === 'directory' && parentOf(c, h);
+          if (p) return p;
+        }
+        return null;
+      };
+      window.showSaveFilePicker = async o => {
+        fs.saveAs.push(o.suggestedName);
+        fs.startIn = o.startIn;
+        const dir = o.startIn?.kind === 'directory' ? o.startIn : (o.startIn && parentOf(fs.root, o.startIn)) || fs.root;
+        const f = fs.file(fs.saveName || o.suggestedName, '');
+        dir.children.push(f);
+        return f;
+      };
+      return true;
+    })()`);
+
+    test('N01 하위 폴더의 파일을 보다가 탐색기 [+] → Ctrl+S: 저장 창이 보던 파일의 폴더에서 열린다', async () => {
+      await setDoc('▮');
+      await stubFiles();
+      await stubFolder();
+      await stubSaveInto();
+      await openStubFolder();
+      await b.click('[data-path="/b"]');
+      await b.waitFor(`!!document.querySelector('[data-path="/b/하위.md"]')`);
+      await b.click('[data-path="/b/하위.md"]');
+      await b.waitFor('lite.doc.path === "/b/하위.md"');
+      await b.click('[data-path="/b"]'); // b를 접어 둔다 — 저장하면 다시 펴져야 한다(N02)
+      await b.waitFor(`!document.querySelector('[data-path="/b/하위.md"]')`);
+      await b.click('#new-here');
+      const fresh = await b.eval(`({ v: lite.snapshot().v, title: document.title, handle: lite.doc.handle,
+        focused: document.activeElement === lite.view.contentDOM })`);
+      assert.deepEqual(fresh, { v: '', title: '제목 없음 — LiteMD', handle: null, focused: true });
+      await type('새 글 내용');
+      await b.eval(`__fs.saveName = '새 글.md'`);
+      await b.press('s', { ctrl: true });
+      await b.waitFor('__fs.writes.length === 1');
+      const r = await b.eval(`({ suggested: __fs.saveAs[0], w: __fs.writes[0],
+        startInIsViewedFile: __fs.startIn === __fs.root.children.find(c => c.name === 'b').children[0] })`);
+      assert.deepEqual(r, { suggested: '제목 없음.md', w: { name: '새 글.md', text: '새 글 내용' }, startInIsViewedFile: true });
+    });
+
+    test('N02 저장하면 트리에서 그 폴더가 펴지고 새 파일이 강조, 제목이 새 이름', async () => {
+      await b.waitFor(`!!document.querySelector('[data-path="/b/새 글.md"]')`);
+      const r = await b.eval(`({ title: document.title, dirty: document.getElementById('name').classList.contains('dirty'), path: lite.doc.path })`);
+      assert.deepEqual(r, { title: '새 글.md — LiteMD', dirty: false, path: '/b/새 글.md' });
+      assert.deepEqual(await current(), ['/b/새 글.md']);
+      assert.ok((await rows()).includes('▾ b'), 'b가 펴져 있다');
+    });
+
+    test('N03 보던 파일 없이 폴더만 열고 상단 [새 파일] → Ctrl+S: 저장 창이 연 폴더에서', async () => {
+      await setDoc('▮');
+      await stubFiles();
+      await stubFolder();
+      await openStubFolder();
+      await b.click('#new');
+      await type('폴더 맨 위');
+      await b.press('s', { ctrl: true });
+      await b.waitFor('__fs.writes.length === 1');
+      assert.equal(await b.eval('__fs.startIn === __fs.root'), true);
+    });
+
+    test('N04 고친 문서에서 [새 파일] → 확인창에서 취소하면 그대로', async () => {
+      await setDoc('▮');
+      await stubFiles();
+      await type('고친 글');
+      await b.eval('__fs.confirmAnswer = false');
+      await b.click('#new');
+      const r = await b.eval('({ confirms: __fs.confirms, v: lite.snapshot().v })');
+      assert.equal(r.v, '고친 글');
+      assert.equal(r.confirms.length, 1);
+      assert.match(r.confirms[0], /새 파일을 만들까요/);
+    });
+
+    test('N05 확인하면 빈 "제목 없음" 문서', async () => {
+      await b.eval('__fs.confirmAnswer = true');
+      await b.click('#new');
+      assert.deepEqual(await b.eval('({ v: lite.snapshot().v, title: document.title })'), { v: '', title: '제목 없음 — LiteMD' });
+    });
+
+    test('N06 읽기 화면에서 [새 파일]: 편집 화면으로 돌아와 빈 문서', async () => {
+      await setDoc('읽던 글▮');
+      await toggleReading();
+      await b.click('#new');
+      const r = await b.eval(`({ reading: lite.reading, preview: document.getElementById('preview').hidden,
+        editor: document.getElementById('editor').hidden, v: lite.snapshot().v,
+        focused: document.activeElement === lite.view.contentDOM, label: document.getElementById('read').textContent })`);
+      assert.deepEqual(r, { reading: false, preview: true, editor: false, v: '', focused: true, label: '읽기' });
+    });
+
+    test('N07 [새 파일] 뒤 Ctrl+Z: 이전 글이 돌아오지 않는다', async () => {
+      await setDoc('▮');
+      await stubFiles();
+      await type('지울 글');
+      await b.click('#new');
+      await b.press('z', { ctrl: true });
+      assert.equal(await value(), '');
+    });
+
     // 여기부터는 File System Access API를 없앤다 — 뒤에 다른 테스트를 붙이려면 stubFiles()부터
     test('B19 File System Access API가 없으면 파일 선택으로 연다', async () => {
       await setDoc('▮');
@@ -636,6 +915,25 @@ for (const [label, exe] of BROWSERS) {
       await b.waitFor('__fs.downloads.length === 1');
       const r = await b.eval(`(async () => ({ name: __fs.downloads[0], text: await __fs.blob.text(), title: document.title }))()`);
       assert.deepEqual(r, { name: 'm.md', text: '추가 폰에서 연 글\r\n', title: 'm.md — LiteMD' });
+    });
+
+    test('N08 저장 창이 없으면 [새 파일]도 "제목 없음.md" 다운로드로 저장', async () => {
+      await b.click('#new');
+      await type('폰 새 글');
+      await b.press('s', { ctrl: true });
+      await b.waitFor('__fs.downloads.length === 2');
+      const r = await b.eval(`(async () => ({ name: __fs.downloads[1], text: await __fs.blob.text() }))()`);
+      assert.deepEqual(r, { name: '제목 없음.md', text: '폰 새 글' });
+    });
+
+    // 페이지를 새로 여니까 뒤쪽에 둔다
+    test('D09 [넓게] 켬/끔을 기억한다: 켜고 새로고침해도 넓은 채', async () => {
+      await setDoc('▮'); // 고친 글이 있으면 새로고침을 확인창이 막는다
+      if (!(await b.eval(`document.body.classList.contains('wide')`))) await b.click('#wide');
+      await b.open(PAGE);
+      const r = await b.eval(`({ wide: document.body.classList.contains('wide'),
+        pressed: document.getElementById('wide').getAttribute('aria-pressed') })`);
+      assert.deepEqual(r, { wide: true, pressed: 'true' });
     });
 
     // 페이지를 새로 여니까 맨 마지막에 둔다

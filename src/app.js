@@ -10,11 +10,12 @@ import { search, searchKeymap } from '@codemirror/search';
 import { markdownLanguage } from '@codemirror/lang-markdown';
 import { tags as t } from '@lezer/highlight';
 import {
-  listEnter, indentLines, outdentLines, trimEdit, detectEol, normalizeEol, toEol, shortcutKey, isListed, compareEntries,
+  listEnter, indentLines, outdentLines, trimEdit, detectEol, normalizeEol, toEol, shortcutKey, isListed, compareEntries, hangPrefix,
 } from './logic.js';
 import { headingFold, headingSections, foldToLevel, unfoldEverything, foldHere } from './folding.js';
 import { livePreview, previewSpans } from './livepreview.js';
 import { renderMarkdown } from './render.js';
+import { wrapIndent } from './wrapindent.js';
 
 const nameEl = document.getElementById('name');
 const picker = document.getElementById('file');
@@ -22,7 +23,8 @@ const side = document.getElementById('side');
 const tree = document.getElementById('tree');
 const UNTITLED = '제목 없음';
 const TYPES = [{ description: 'Markdown', accept: { 'text/markdown': ['.md', '.markdown', '.txt'] } }];
-let doc = { handle: null, name: '', saved: null, eol: '\n', path: '' }; // saved: CodeMirror Text
+// saved: CodeMirror Text. startIn: 새 파일의 저장 창이 처음 열릴 곳(보던 파일 또는 연 폴더의 손잡이)
+let doc = { handle: null, name: '', saved: null, eol: '\n', path: '', startIn: null };
 let root = null; // 열린 폴더: { handle, open: 펼쳐 둔 하위 폴더 경로들 }
 let renderSeq = 0;
 
@@ -60,10 +62,12 @@ const tabCmd = fn => view => {
 };
 
 const highlight = HighlightStyle.define([
-  { tag: t.heading1, fontSize: '1.3em', fontWeight: '700' },
-  { tag: t.heading2, fontSize: '1.15em', fontWeight: '700' },
-  { tag: t.heading3, fontSize: '1.05em', fontWeight: '700' },
-  { tag: [t.heading4, t.heading5, t.heading6], fontWeight: '700' },
+  // 헤딩은 단계마다 1.15배 이상 차이 난다(v4): 라이브에서 #가 숨으면 크기만이 단계를 알려 준다
+  { tag: t.heading1, fontSize: '1.75em', fontWeight: '700', lineHeight: '1.35' },
+  { tag: t.heading2, fontSize: '1.45em', fontWeight: '700', lineHeight: '1.35' },
+  { tag: t.heading3, fontSize: '1.2em', fontWeight: '700', lineHeight: '1.35' },
+  { tag: t.heading4, fontSize: '1.05em', fontWeight: '700' },
+  { tag: [t.heading5, t.heading6], fontWeight: '700' },
   { tag: t.strong, fontWeight: '700' },
   { tag: t.emphasis, fontStyle: 'italic' },
   { tag: t.strikethrough, textDecoration: 'line-through' },
@@ -110,6 +114,11 @@ const theme = EditorView.theme({
   '.cm-lp-hr': { display: 'inline-block', width: '100%', verticalAlign: 'middle', borderTop: '1px solid var(--line)' },
   '.cm-lp-quote': { borderLeft: '3px solid var(--line)', paddingLeft: '10px' },
   '.cm-lp-code': { backgroundColor: 'var(--code)' },
+  // 꺾인 줄 맞춤: 첫 줄은 제자리(기본 왼쪽 여백 6px, 인용 줄은 10px), 꺾인 줄만 --hang만큼 들어간다.
+  // 안쪽 inline-block(접힘 표시 ⋯ 등)은 음수 들여쓰기를 물려받으면 글자가 상자 밖으로 나가서 0으로 되돌린다
+  '.cm-line.cm-hang': { paddingLeft: 'calc(6px + var(--hang))', textIndent: 'calc(-1 * var(--hang))' },
+  '.cm-line.cm-lp-quote.cm-hang': { paddingLeft: 'calc(10px + var(--hang))' },
+  '.cm-hang *': { textIndent: '0' },
   '.cm-searchMatch': { backgroundColor: 'var(--match)' },
   '.cm-searchMatch-selected': { backgroundColor: 'var(--accent)', color: 'var(--bg)' },
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'var(--select)' },
@@ -137,6 +146,7 @@ const extensions = [
   indentUnit.of('  '),
   EditorState.tabSize.of(2),
   EditorView.lineWrapping,
+  wrapIndent,
   placeholder('여기에 쓰세요.\n\nCtrl+O 열기 · Ctrl+S 저장 · Enter 목록 이어쓰기 · Tab 들여쓰기 · H1~H3 버튼으로 접기'),
   EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', 'aria-label': '편집창' }),
   phrases,
@@ -172,8 +182,8 @@ function isDirty() {
   return !view.state.doc.eq(doc.saved);
 }
 
-function confirmDiscard() {
-  return !isDirty() || confirm('저장하지 않은 변경이 있어요. 버리고 열까요?');
+function confirmDiscard(what = '열까요') {
+  return !isDirty() || confirm(`저장하지 않은 변경이 있어요. 버리고 ${what}?`);
 }
 
 function refresh() {
@@ -231,11 +241,23 @@ async function locate(handle) {
   return parts ? '/' + parts.join('/') : '';
 }
 
+// 열기·저장 창이 처음 열릴 곳: 지금 파일 → 새 파일이면 보던 파일 → 연 폴더 (파일 손잡이면 그 파일의 폴더에서 열린다)
+const startDir = () => doc.handle || doc.startIn || root?.handle;
+
+// 빈 '제목 없음' 문서. 디스크에는 처음 저장할 때 만든다 — 저장 창은 보던 파일의 폴더(없으면 연 폴더)에서 열린다
+function newFile() {
+  if (!confirmDiscard('새 파일을 만들까요')) return;
+  const startIn = startDir() || null;
+  if (reading) setReading(false);
+  load(null, '', '');
+  doc.startIn = startIn;
+}
+
 async function openFile() {
   if (!confirmDiscard()) return;
   if (!window.showOpenFilePicker) return picker.click();
   try {
-    const [handle] = await window.showOpenFilePicker({ types: TYPES, startIn: doc.handle || root?.handle });
+    const [handle] = await window.showOpenFilePicker({ types: TYPES, startIn: startDir() });
     const file = await handle.getFile();
     load(handle, file.name, await file.text(), await locate(handle));
   } catch (err) {
@@ -271,12 +293,14 @@ async function save(as) {
       await write(doc.handle, text);
     } else if (window.showSaveFilePicker) {
       const handle = await window.showSaveFilePicker({
-        suggestedName: doc.name || UNTITLED + '.md', types: TYPES, startIn: doc.handle || root?.handle,
+        suggestedName: doc.name || UNTITLED + '.md', types: TYPES, startIn: startDir(),
       });
       await write(handle, text);
       doc.handle = handle;
       doc.name = handle.name;
+      doc.startIn = null;
       doc.path = await locate(handle);
+      reveal(doc.path);
       renderTree(); // 새로 만든 파일이 트리에 보이게
     } else {
       doc.name = doc.name || UNTITLED + '.md';
@@ -297,6 +321,7 @@ async function openFolder() {
     root = { handle, open: new Set() };
     document.getElementById('folder-name').textContent = handle.name;
     side.hidden = false;
+    setSideCollapsed(false);
     doc.path = await locate(doc.handle);
     await renderTree();
   } catch (err) {
@@ -307,8 +332,25 @@ async function openFolder() {
 function closeFolder() {
   root = null;
   side.hidden = true;
+  setSideCollapsed(false);
   tree.replaceChildren();
   doc.path = '';
+}
+
+// 탐색기를 [›]만 남은 좁은 띠로 접고 편다. 폴더는 열린 채라 펴면 트리가 그대로다
+const collapseButton = document.getElementById('collapse');
+function setSideCollapsed(on) {
+  side.classList.toggle('collapsed', on);
+  collapseButton.textContent = on ? '›' : '‹';
+  collapseButton.title = on ? '탐색기 펼치기' : '탐색기 접기';
+  collapseButton.setAttribute('aria-expanded', String(!on));
+}
+
+// 트리에서 그 파일이 보이게 상위 폴더를 편다('/a/b/c.md' → '/a', '/a/b')
+function reveal(path) {
+  if (!root || !path) return;
+  const parts = path.split('/').slice(1, -1);
+  parts.forEach((_, i) => root.open.add('/' + parts.slice(0, i + 1).join('/')));
 }
 
 // 펼쳐 둔 폴더까지 다시 읽어 트리 전체를 새로 그린다. 늦게 끝난 옛 그리기는 버린다.
@@ -368,6 +410,29 @@ function markCurrent() {
   for (const row of tree.children) row.classList.toggle('current', row.dataset.path === doc.path);
 }
 
+// ── 넓게(노션의 '전체 너비') ──
+// 켬/끔은 이 브라우저에 기억한다. 저장소를 못 쓰는 환경(막힌 저장소 등)이면 기억만 안 된다
+
+const wideButton = document.getElementById('wide');
+
+function setWide(on) {
+  document.body.classList.toggle('wide', on);
+  wideButton.setAttribute('aria-pressed', String(on));
+  try {
+    localStorage.setItem('litemd.wide', on ? '1' : '0');
+  } catch {
+    // 기억만 못 한다
+  }
+}
+
+function rememberedWide() {
+  try {
+    return localStorage.getItem('litemd.wide') === '1';
+  } catch {
+    return false;
+  }
+}
+
 // ── 키·버튼 ──
 
 addEventListener('keydown', e => {
@@ -400,11 +465,16 @@ for (const button of document.querySelectorAll('[data-level]')) {
 }
 liveButton.addEventListener('click', () => setLive(!liveOn));
 readButton.addEventListener('click', () => setReading(!reading));
+wideButton.addEventListener('click', () => setWide(!document.body.classList.contains('wide')));
 document.getElementById('folder').addEventListener('click', openFolder);
 document.getElementById('close-folder').addEventListener('click', closeFolder);
+collapseButton.addEventListener('click', () => setSideCollapsed(!side.classList.contains('collapsed')));
+document.getElementById('new').addEventListener('click', newFile);
+document.getElementById('new-here').addEventListener('click', newFile);
 document.getElementById('open').addEventListener('click', openFile);
 document.getElementById('save').addEventListener('click', e => save(e.shiftKey));
 document.getElementById('folder').hidden = !window.showDirectoryPicker; // 폰·파이어폭스·사파리엔 없다
+setWide(rememberedWide());
 refresh();
 view.focus();
 
@@ -434,6 +504,19 @@ window.lite = {
   },
   headings: () => headingSections(view.state),
   spans: () => previewSpans(view.state),
+  // 꺾인 줄 맞춤 확인: n번째 줄의 글 시작과 꺾인 둘째 줄 시작의 x(줄 첫 글자 기준, px). 안 꺾였으면 wrap: null
+  wrap(n) {
+    const line = view.state.doc.line(n);
+    const k = line.from + hangPrefix(line.text);
+    const left = view.coordsAtPos(line.from, 1).left;
+    const start = view.coordsAtPos(k, 1);
+    const text = Math.round(start.left - left);
+    for (let p = k + 1; p < line.to; p++) {
+      const c = view.coordsAtPos(p, 1);
+      if (c && c.top > start.top + 2) return { text, wrap: Math.round(c.left - left) };
+    }
+    return { text, wrap: null };
+  },
   get reading() {
     return reading;
   },

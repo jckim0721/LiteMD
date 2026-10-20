@@ -13,6 +13,13 @@ export function parseItem(line) {
   return { indent: m[1], bullet: m[2] || '', num: m[3] || '', delim: m[4] || '', space: m[5], box: m[6] || '', end: m[0].length };
 }
 
+// 화면에서 꺾인 줄을 맞출 글 시작 위치(글자 수): 줄 앞 공백·탭 + 목록 표시·공백·할 일 칸. 없으면 0(수평선 포함)
+export function hangPrefix(line) {
+  const it = parseItem(line);
+  if (it) return it.end;
+  return HR_RE.test(line) ? 0 : /^[ \t]*/.exec(line)[0].length;
+}
+
 function lineStartOf(text, pos) {
   return pos <= 0 ? 0 : text.lastIndexOf('\n', pos - 1) + 1;
 }

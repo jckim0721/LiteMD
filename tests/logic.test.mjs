@@ -10,7 +10,7 @@ import { headingSections } from '../src/folding.js';
 import { previewSpans } from '../src/livepreview.js';
 import { renderMarkdown, safeUrl } from '../src/render.js';
 import {
-  vectors, helpers, headingVectors, levelDoc, levelVectors, liveVectors, renderVectors, urlVectors, parse, show,
+  vectors, helpers, headingVectors, levelDoc, levelVectors, liveVectors, hangVectors, renderVectors, urlVectors, parse, show,
 } from './vectors.mjs';
 
 const FN = { Enter: logic.listEnter, Tab: logic.indentLines, 'Shift+Tab': logic.outdentLines };
@@ -84,6 +84,14 @@ for (const v of liveVectors) {
     const { text, s, e } = parse(v.doc);
     const state = EditorState.create({ doc: text, selection: EditorSelection.single(s, e), extensions: [markdownLanguage] });
     assert.equal(visibleText(state), v.expect);
+  });
+}
+
+// ── 꺾인 줄 맞춤: 글 시작 위치 ──
+
+for (const v of hangVectors) {
+  test(`${v.id} 글 시작 — ${v.note}`, () => {
+    assert.equal(logic.hangPrefix(v.line.replaceAll('⇥', '\t')), v.expect);
   });
 }
 

@@ -14,10 +14,14 @@ The interface is in Korean. The buttons, left to right:
 |---|---|
 | 라이브 | Live preview on/off |
 | 읽기 / 편집 | Reading view / back to editing |
+| 넓게 | Full width on/off |
 | H1 H2 H3 · 펼침 | Fold to heading level · Unfold all |
 | 폴더 | Open folder (file tree) |
+| 새 파일 | New file |
 | 열기 | Open |
 | 저장 | Save |
+
+In the file tree header: [+] new file, [‹] / [›] collapse / expand the tree, [×] close the folder.
 
 ## Usage
 
@@ -28,6 +32,9 @@ Open the address above in Chrome or Edge, or download a release file and open it
 | Ctrl+O / Ctrl+S | Open / Save (overwrites the file you opened) |
 | Shift+click [저장] | Save as (Chrome also takes Ctrl+Shift+S; Edge uses that key for Web capture) |
 | [폴더] | Open a folder and show its tree on the left. Click a file to open it |
+| [새 파일] · [+] in the tree | New untitled file. Its location is chosen on the first save; the save dialog opens in the folder of the file you were viewing (otherwise the opened folder) |
+| [‹] / [›] in the tree | Collapse the file tree to a thin strip / expand it again |
+| [넓게] | Full width, like Notion's: the editor and the reading view use the whole window instead of a centered column. Remembered |
 | [라이브] | Live preview on/off (on by default): on lines without the cursor, marks such as `#`, `**` and link URLs are hidden, tasks become clickable checkboxes, and bullets become `•` |
 | Ctrl+click | Open a link in a new tab (a plain click edits) |
 | Ctrl+E · [읽기] | Switch between the reading view and the editor. Tables and images are rendered |
@@ -40,6 +47,7 @@ Open the address above in Chrome or Edge, or download a release file and open it
 | Shift+Enter | Line break without continuing the list |
 | Tab / Shift+Tab | Indent / outdent (2 spaces, works on a multi-line selection) |
 
+- Long indented lines and list items wrap at their text start (after the bullet, number or checkbox) instead of the left edge. Only the view changes; the text is saved as is
 - Live preview works per line. Lines touched by the cursor or selection stay raw, so they are easy to edit, and the screen doesn't shift while you compose text with an IME (e.g. Korean)
 - The reading view shows HTML as text instead of running it, and blocks dangerous URLs such as `javascript:`
 - Folding only changes the view. Saving while folded still saves the full text
@@ -51,7 +59,7 @@ Open the address above in Chrome or Edge, or download a release file and open it
 
 ## Offline and air-gapped use
 
-Copy one file: the one attached to each [release](https://github.com/jckim0721/LiteMD/releases) (`LiteMD-v3.0.html` and so on, identical to `index.html`). The editor engine and the icon are inside it and it makes zero network requests, so no internet is needed. No install, no server.
+Copy one file: the one attached to each [release](https://github.com/jckim0721/LiteMD/releases) (`LiteMD-v4.0.html` and so on, identical to `index.html`). The editor engine and the icon are inside it and it makes zero network requests, so no internet is needed. No install, no server.
 
 - Browser: Chrome or Edge 110+ recommended (check with `edge://version`)
 - If company policy blocks the file-access API, opening falls back to a file picker and saving to a download, automatically
@@ -61,7 +69,8 @@ Copy one file: the one attached to each [release](https://github.com/jckim0721/L
 
 Each [release](https://github.com/jckim0721/LiteMD/releases) has a single runnable file attached. Differences between versions: [CHANGELOG.en.md](CHANGELOG.en.md).
 
-- **v3.0 (current):** live preview, reading view (Ctrl+E), checkboxes, Ctrl+click links
+- **v4.0 (current):** wrapped lines align with the text start, full width, collapsible file tree, new file, larger heading sizes
+- **v3.0:** live preview, reading view (Ctrl+E), checkboxes, Ctrl+click links
 - **v2.0:** CodeMirror 6 — heading folding, fold to level, find, basic highlighting. Lists with sub-items and code blocks fold too (Markdown's built-in folding)
 - **v1.0 (`/v1/`):** a plain textarea, no external libraries, 16.5 KB. List continuation, indenting, open/save, folder explorer
 
@@ -74,6 +83,7 @@ src/logic.js        pure functions: list continuation, indenting, line endings, 
 src/folding.js      heading sections (from the Markdown syntax tree) and fold commands
 src/livepreview.js  live preview: per-line ranges to hide or replace (previewSpans) and their decorations, checkboxes, Ctrl+click
 src/render.js       reading view: Markdown → HTML with the same parser, URL filtering (safeUrl)
+src/wrapindent.js   wrapped-line alignment: measures each line's text start and indents the wrapped part (view only)
 build.mjs           bundles src/ into a single root index.html (license notices included)
 index.html          build output — open this
 tests/              unit tests (Node) + headless Chrome/Edge browser tests (CDP, no extra tools)
@@ -97,4 +107,4 @@ MIT — [LICENSE](LICENSE). Notices for the bundled libraries (CodeMirror, Lezer
 
 ## Why
 
-Practice in finishing one thing every month. v1 is build #0 (October 2026), v2 is #1, v3 is #2.
+Practice in finishing one thing every month. v1 is build #0 (October 2026), v2 is #1, v3 is #2, v4 is #3.
