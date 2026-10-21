@@ -6,23 +6,41 @@ Each [release](https://github.com/jckim0721/LiteMD/releases) has one runnable fi
 
 ## Comparison
 
-| | v1.0 (build #0) | v2.0 (build #1) | v3.0 (build #2) |
-|---|---|---|---|
-| Editor | textarea | CodeMirror 6 | CodeMirror 6 |
-| File size | 16.5 KB | 370 KB | 381 KB |
-| External libraries | none | CodeMirror, Lezer (bundled in the file) | same |
-| Open, save, save as, unsaved mark | ✓ | ✓ | ✓ |
-| List continuation, Tab indent | ✓ | ✓ | ✓ |
-| Folder explorer | ✓ | ✓ | ✓ |
-| Heading folding, fold to level | — | ✓ | ✓ |
-| Find and replace (Ctrl+F) | browser's find | ✓ | ✓ |
-| Basic highlighting (heading sizes, dimmed marks) | — | ✓ | ✓ |
-| Live preview | — | — | ✓ |
-| Reading view (Ctrl+E) | — | — | ✓ |
-| Clickable checkboxes, Ctrl+click links | — | — | ✓ |
-| Browser | Chrome/Edge 86+ | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended |
+| | v1.0 (build #0) | v2.0 (build #1) | v3.0 (build #2) | v4.0 (build #3) |
+|---|---|---|---|---|
+| Editor | textarea | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 |
+| File size | 16.5 KB | 370 KB | 381 KB | 386 KB |
+| External libraries | none | CodeMirror, Lezer (bundled in the file) | same | same |
+| Open, save, save as, unsaved mark | ✓ | ✓ | ✓ | ✓ |
+| List continuation, Tab indent | ✓ | ✓ | ✓ | ✓ |
+| Folder explorer | ✓ | ✓ | ✓ | ✓ |
+| Heading folding, fold to level | — | ✓ | ✓ | ✓ |
+| Find and replace (Ctrl+F) | browser's find | ✓ | ✓ | ✓ |
+| Basic highlighting (heading sizes, dimmed marks) | — | ✓ | ✓ | ✓ |
+| Live preview | — | — | ✓ | ✓ |
+| Reading view (Ctrl+E) | — | — | ✓ | ✓ |
+| Clickable checkboxes, Ctrl+click links | — | — | ✓ | ✓ |
+| Wrapped lines continue at the text start | — | — | — | ✓ |
+| Full width | — | — | — | ✓ |
+| Collapsible file tree | — | — | — | ✓ |
+| New file | — | — | — | ✓ |
+| Browser | Chrome/Edge 86+ | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended |
 
 All versions: a single HTML file, zero network requests at runtime, no key interception during IME composition, CRLF files saved as CRLF, and in browsers without the File System Access API (phones, Firefox, Safari) files open through a file picker and save as downloads.
+
+## v4.0 — Build #3: wrapped-line alignment, full width, collapsible tree, new file, heading sizes (2026-10-21)
+
+**Changes since v3.0**
+
+- New: **wrapped-line alignment** — when an indented line, list item or task wraps at the edge of the screen, the wrapped part continues at the line's text start (after the `•`, number or checkbox) instead of the left edge. Raw lines under the cursor align the same way. Only the view changes; the text is saved as is. Indents wider than half the editor are left unaligned
+- New: **[넓게] (Full width)** — like Notion's full width, the editor and the reading view use the whole window instead of a centered column. The setting is remembered in the browser
+- New: **collapsible file tree** — [‹] in the tree header collapses it to a thin strip and [›] expands it again, with expanded subfolders kept
+- New: **new file** — [새 파일] (New file) at the top or [+] in the tree header opens an empty untitled document. Its location and name are chosen on the first save, and the save dialog opens in the folder of the file you were viewing (otherwise the opened folder). Saved inside the opened folder, the file is highlighted in the tree
+- Changed: larger headings, so the levels are easy to tell apart — editor H1/H2/H3 1.3/1.15/1.05× → 1.75/1.45/1.2×, reading view 1.7/1.35/1.15× → 2/1.5/1.25×
+- Changed: in a narrow window the top buttons wrap to the next line (no horizontal scroll, even at 360 px)
+- Size: 381 KB → 386 KB
+
+335 of 336 automated tests passed (Chrome, Edge), 1 skipped; manual checks Y01–Y05 passed.
 
 ## v3.0 — Build #2: live preview + reading view (2026-10-18)
 

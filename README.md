@@ -6,7 +6,7 @@ A Markdown editor in a single HTML file. Obsidian-style live preview that render
 
 **Try it:** https://jckim0721.github.io/LiteMD/ · Build #0 (a plain textarea, 16.5 KB): https://jckim0721.github.io/LiteMD/v1/
 
-![LiteMD demo — live preview, checkboxes, heading folding, reading view](docs/demo.png)
+![LiteMD demo — live preview, wrapped-line alignment, checkboxes, heading folding, reading view, collapsible tree, full width](docs/demo.png)
 
 The interface is in Korean. The buttons, left to right:
 

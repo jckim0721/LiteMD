@@ -1,4 +1,4 @@
-// README용 움직이는 데모 — 가짜 폴더로 실제 조작(목록 이어쓰기·Tab·접기)을 하며 화면을 찍어
+// README용 움직이는 데모 — 가짜 폴더로 실제 조작(목록 이어쓰기·체크박스·접기·읽기 화면·탐색기 접기·넓게)을 하며 화면을 찍어
 // APNG(움직이는 PNG) 한 장으로 묶는다: docs/demo.png. GIF와 달리 색을 줄이지 않고 PNG 프레임을 그대로 잇는다.
 // 실행: npm run build 다음에 node tools/demo.mjs (크롬 경로가 다르면 CHROME_PATH)
 import { writeFileSync } from 'node:fs';
@@ -16,6 +16,7 @@ const note = `# 10월 회고
 
 - [x] LiteMD v1 — textarea 한 장
 - [x] 폴더 탐색기
+  - 점으로 시작하는 폴더(.git, .obsidian)는 숨기고, 마크다운과 텍스트 파일만 한국어 이름순으로 보여 준다. 누르면 바로 열린다
 - [ ] GitHub 공개
 
 ## 배운 것
@@ -133,6 +134,10 @@ try {
   await shot(2000);
   await b.press('e', { ctrl: true });
   await shot(1500);
+  await b.click('#collapse'); // 탐색기 접기 — 꺾인 줄은 넓어진 폭에 맞춰 다시 맞춘다
+  await shot(1200);
+  await b.click('#wide'); // 넓게: 가운데 기둥 대신 창 너비를 다 쓴다
+  await shot(2000);
   writeFileSync(out, apng(frames));
   writeFileSync(out.replace(/\.png$/, '-last.png'), frames.at(-1).png); // 마지막 장면 확인용(커밋 안 함)
   console.log(`저장: ${out} (${frames.length}장)`);

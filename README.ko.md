@@ -6,7 +6,7 @@ HTML 파일 한 장으로 된 마크다운 에디터. 옵시디언처럼 쓰면�
 
 **써 보기:** https://jckim0721.github.io/LiteMD/ · 0호(textarea 한 장, 16.5KB): https://jckim0721.github.io/LiteMD/v1/
 
-![LiteMD 데모 — 라이브 프리뷰·체크박스·헤딩 접기·읽기 화면](docs/demo.png)
+![LiteMD 데모 — 라이브 프리뷰·꺾인 줄 맞춤·체크박스·헤딩 접기·읽기 화면·탐색기 접기·넓게](docs/demo.png)
 
 ## 쓰는 법
 
