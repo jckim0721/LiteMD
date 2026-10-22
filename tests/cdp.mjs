@@ -20,6 +20,10 @@ const KEYS = {
   '{': { key: '{', code: 'BracketLeft', vk: 219 }, // 실제 키보드에서 Shift+[ 는 key가 '{'로 온다
   '}': { key: '}', code: 'BracketRight', vk: 221 },
   Escape: { key: 'Escape', code: 'Escape', vk: 27 },
+  ArrowDown: { key: 'ArrowDown', code: 'ArrowDown', vk: 40 },
+  Home: { key: 'Home', code: 'Home', vk: 36 },
+  End: { key: 'End', code: 'End', vk: 35 },
+  Backspace: { key: 'Backspace', code: 'Backspace', vk: 8 },
 };
 
 const modBits = mods => (mods.alt ? 1 : 0) | (mods.ctrl ? 2 : 0) | (mods.meta ? 4 : 0) | (mods.shift ? 8 : 0);
