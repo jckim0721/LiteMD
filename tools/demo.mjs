@@ -1,4 +1,4 @@
-// README용 움직이는 데모 — 가짜 폴더로 실제 조작(목록 이어쓰기·체크박스·접기·읽기 화면·탐색기 접기·넓게)을 하며 화면을 찍어
+// README용 움직이는 데모 — 가짜 폴더로 실제 조작(목록 이어쓰기·체크박스·코드블럭·인용·접기·읽기 화면·탐색기 접기·넓게)을 하며 화면을 찍어
 // APNG(움직이는 PNG) 한 장으로 묶는다: docs/demo.png. GIF와 달리 색을 줄이지 않고 PNG 프레임을 그대로 잇는다.
 // 실행: npm run build 다음에 node tools/demo.mjs (크롬 경로가 다르면 CHROME_PATH)
 import { writeFileSync } from 'node:fs';
@@ -127,10 +127,37 @@ try {
   const box = await b.eval(`(() => { const r = [...document.querySelectorAll('.cm-lp-task')][2].getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   await b.clickAt(box.x, box.y);
   await shot(1200);
+  // 코드블럭: ```js + Enter면 닫는 울타리까지 생기고, 코드 안 Enter는 들여쓰기를 잇는다
+  await b.eval(`lite.view.dispatch({ selection: { anchor: lite.view.state.doc.toString().indexOf('기록이 남는다.') + 8 } })`);
+  await b.press('Enter');
+  await b.send('Input.insertText', { text: '```js' });
+  await b.press('Enter');
+  await shot();
+  await b.send('Input.insertText', { text: 'function save(text) {' });
+  await b.press('Enter');
+  await b.press('Tab');
+  await b.send('Input.insertText', { text: 'if (!text) return;' });
+  await b.press('Enter');
+  await b.send('Input.insertText', { text: 'write(text, 0); // 저장' });
+  await b.press('Enter');
+  await b.press('Tab', { shift: true });
+  await b.send('Input.insertText', { text: '}' });
+  await shot();
+  // [복사]: 코드만(울타리 빼고) 클립보드로 — 버튼에 '복사됨'
+  await b.click('.cm-lp-copy');
+  await shot(1600);
+  // 인용: > 줄에서 Enter면 다음 줄도 > 로
+  await b.eval('lite.view.dispatch({ selection: { anchor: lite.view.state.doc.length } })');
+  await b.press('Enter');
+  await b.send('Input.insertText', { text: '> 다음 주 회의에서 공유' });
+  await b.press('Enter');
+  await b.send('Input.insertText', { text: '피드백 모으기' });
+  await shot(1400);
   await b.click('[data-level="2"]'); // H1·H2만 보이게
   await shot(1400);
   await b.click('[data-level="0"]');
-  await b.press('e', { ctrl: true }); // 읽기 프리뷰
+  await b.press('e', { ctrl: true }); // 읽기 프리뷰 — 코드 상자가 보이게 내린다
+  await b.eval(`document.querySelector('#preview .codebox').scrollIntoView({ block: 'center' }), 0`);
   await shot(2000);
   await b.press('e', { ctrl: true });
   await shot(1500);

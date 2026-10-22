@@ -9,11 +9,16 @@ import * as logic from '../src/logic.js';
 import { headingSections } from '../src/folding.js';
 import { previewSpans } from '../src/livepreview.js';
 import { renderMarkdown, safeUrl } from '../src/render.js';
+import { codeTokens } from '../src/code.js';
+import { codeEnter } from '../src/codeblock.js';
 import {
   vectors, helpers, headingVectors, levelDoc, levelVectors, liveVectors, hangVectors, renderVectors, urlVectors, parse, show,
+  highlightVectors, boxVectors, depthVectors,
 } from './vectors.mjs';
 
-const FN = { Enter: logic.listEnter, Tab: logic.indentLines, 'Shift+Tab': logic.outdentLines };
+// Enter는 앱과 같은 순서: 코드 블록 → 목록·인용 → (둘 다 null이면) 그냥 줄바꿈
+const enter = (text, s, e) => codeEnter(text, s, e) || logic.listEnter(text, s, e);
+const FN = { Enter: enter, Tab: logic.indentLines, 'Shift+Tab': logic.outdentLines };
 const apply = (text, ed) => text.slice(0, ed.from) + ed.insert + text.slice(ed.to);
 const ctx = vm.createContext({ ...logic }); // helpers의 call 식을 그대로 실행할 곳
 
@@ -62,7 +67,10 @@ for (const v of levelVectors) {
 
 // ── 라이브 프리뷰: 줄마다 보이는 글 ──
 
-const SHOWN = { hide: () => '', bullet: () => '•', hr: () => '───', task: s => (s.checked ? '☑' : '☐') };
+// 글머리·할 일 칸은 뒤 공백까지 덮는다(v5) → 위젯이 공백 몫까지 보여 준다
+const SHOWN = {
+  hide: () => '', bullet: () => '• ', hr: () => '───', task: s => (s.checked ? '☑ ' : '☐ '), fence: s => `⟨${s.lang}⟩`,
+};
 function visibleText(state) {
   const { spans } = previewSpans(state);
   const lines = [];
@@ -79,11 +87,38 @@ function visibleText(state) {
   return lines.join(' ⏎ ');
 }
 
+const liveState = display => {
+  const { text, s, e } = parse(display.includes('▮') ? display : display + '▮');
+  return EditorState.create({ doc: text, selection: EditorSelection.single(s, e), extensions: [markdownLanguage] });
+};
+
 for (const v of liveVectors) {
   test(`${v.id} 라이브 — ${v.note}`, () => {
-    const { text, s, e } = parse(v.doc);
-    const state = EditorState.create({ doc: text, selection: EditorSelection.single(s, e), extensions: [markdownLanguage] });
-    assert.equal(visibleText(state), v.expect);
+    assert.equal(visibleText(liveState(v.doc)), v.expect);
+  });
+}
+
+// 코드 상자 줄 모양·인용 깊이(줄 꾸밈은 커서와 상관없다 — 커서는 문서 끝)
+for (const v of boxVectors) {
+  test(`${v.id} 코드 상자 — ${v.doc}`, () => {
+    const state = liveState(v.doc);
+    const shape = new Map(previewSpans(state).code);
+    const lines = [];
+    for (let n = 1; n <= state.doc.lines; n++) {
+      const c = shape.get(n);
+      lines.push(c ? (c.fence ? 'f' : 'c') + (c.top ? '^' : '') + (c.bottom ? '_' : '') : '-');
+    }
+    assert.equal(lines.join(' '), v.expect);
+  });
+}
+
+for (const v of depthVectors) {
+  test(`${v.id} 인용 깊이 — ${v.doc}`, () => {
+    const state = liveState(v.doc);
+    const depth = new Map(previewSpans(state).quotes);
+    const lines = [];
+    for (let n = 1; n <= state.doc.lines; n++) lines.push(depth.get(n) || 0);
+    assert.equal(lines.join(' '), v.expect);
   });
 }
 
@@ -92,6 +127,25 @@ for (const v of liveVectors) {
 for (const v of hangVectors) {
   test(`${v.id} 글 시작 — ${v.note}`, () => {
     assert.equal(logic.hangPrefix(v.line.replaceAll('⇥', '\t')), v.expect);
+  });
+}
+
+// ── 색칠 토큰 ──
+
+const marked = (code, tokens) => {
+  let out = '';
+  let pos = 0;
+  for (const t of tokens) {
+    out += code.slice(pos, t.from) + `{${t.type}|${code.slice(t.from, t.to)}}`;
+    pos = t.to;
+  }
+  return (out + code.slice(pos)).replaceAll('\n', '⏎');
+};
+
+for (const v of highlightVectors) {
+  test(`${v.id} 색칠 ${v.lang || '(언어 없음)'} — ${v.code.slice(0, 30)}`, () => {
+    const code = v.code.replaceAll('⏎', '\n');
+    assert.equal(marked(code, codeTokens(v.lang, code)), v.expect);
   });
 }
 

@@ -1,6 +1,7 @@
 // 읽기 프리뷰 — 편집기와 같은 마크다운 파서(@lezer/markdown)의 구문 트리를 HTML 문자열로 그린다.
 // DOM을 쓰지 않아서 Node 테스트가 그대로 부른다. 안전: HTML은 실행하지 않고 글자로 보여 주고, 주소는 safeUrl로 거른다.
 import { markdownLanguage } from '@codemirror/lang-markdown';
+import { codeLang, codeSegments, codeTokens } from './code.js';
 
 const ESC = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' };
 const esc = s => s.replace(/[&<>"]/g, c => ESC[c]);
@@ -37,6 +38,18 @@ export function renderMarkdown(text) {
     return out + (pos < to ? esc(src(pos, to)) : '');
   };
   const inner = node => inlineRange(node, node.from, node.to);
+
+  // 코드 글: CodeText 조각을 잇는다(인용·목록 안이면 줄마다 앞 표시가 빠진 조각으로 나뉜다 — v3은 첫 조각만 읽었다)
+  const codeOf = node => codeSegments(node).map(s => src(s.from, s.to)).join('');
+  const highlight = (lang, code) => {
+    let out = '';
+    let pos = 0;
+    for (const t of codeTokens(lang, code)) {
+      out += `${esc(code.slice(pos, t.from))}<span class="tk-${t.type}">${esc(code.slice(t.from, t.to))}</span>`;
+      pos = t.to;
+    }
+    return out + esc(code.slice(pos));
+  };
 
   // 링크·이미지: [글](주소 "제목") — 여는 [ 와 ] 사이가 글, 그 뒤 URL·LinkTitle
   const linkParts = node => {
@@ -126,16 +139,13 @@ export function renderMarkdown(text) {
         return `<ol${start !== 1 ? ` start="${start}"` : ''}>${childrenOf(node).map(listItem).join('')}</ol>`;
       }
       case 'HorizontalRule': return '<hr>';
-      case 'FencedCode': {
+      case 'FencedCode': { // 언어는 정보 글의 첫 단어, 아는 언어면 색칠
         const info = node.getChild('CodeInfo');
-        const code = node.getChild('CodeText');
-        const lang = info ? ` class="language-${esc(src(info.from, info.to))}"` : '';
-        return `<pre><code${lang}>${code ? esc(src(code.from, code.to)) : ''}</code></pre>`;
+        const lang = info ? codeLang(src(info.from, info.to)) : '';
+        return `<pre><code${lang ? ` class="language-${esc(lang)}"` : ''}>${highlight(lang, codeOf(node))}</code></pre>`;
       }
-      case 'CodeBlock': { // 4칸 들여쓴 코드: 줄마다 들여쓰기를 걷어 낸다
-        const code = src(node.from, node.to).split('\n').map(l => l.replace(/^(?: {1,4}|\t)/, '')).join('\n');
-        return `<pre><code>${esc(code)}</code></pre>`;
-      }
+      case 'CodeBlock': // 4칸 들여쓴 코드(언어 없음)
+        return `<pre><code>${esc(codeOf(node))}</code></pre>`;
       case 'Table': {
         const head = node.getChild('TableHeader');
         const rows = childrenOf(node).filter(c => c.name === 'TableRow');

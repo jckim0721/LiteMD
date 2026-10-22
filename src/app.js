@@ -1,10 +1,11 @@
 // 화면 — CodeMirror 편집기, 파일 입출력, 탐색기, 헤딩 접기, 단축키.
 // v1(textarea)의 화면 스크립트를 옮겨 왔다. 글 변경 규칙(목록·Tab)은 logic.js의 v1 순수 함수 그대로다.
-import { EditorState, EditorSelection, Compartment } from '@codemirror/state';
+import { EditorState, EditorSelection, Compartment, Prec } from '@codemirror/state';
 import { EditorView, keymap, placeholder } from '@codemirror/view';
 import { history, historyKeymap, defaultKeymap, insertNewline, isolateHistory } from '@codemirror/commands';
 import {
   foldGutter, codeFolding, foldKeymap, unfoldCode, syntaxHighlighting, HighlightStyle, indentUnit, foldedRanges, foldable,
+  syntaxTree, syntaxTreeAvailable,
 } from '@codemirror/language';
 import { search, searchKeymap } from '@codemirror/search';
 import { markdownLanguage } from '@codemirror/lang-markdown';
@@ -16,6 +17,7 @@ import { headingFold, headingSections, foldToLevel, unfoldEverything, foldHere }
 import { livePreview, previewSpans } from './livepreview.js';
 import { renderMarkdown } from './render.js';
 import { wrapIndent } from './wrapindent.js';
+import { codeEnter, codeHighlight, copyInto } from './codeblock.js';
 
 const nameEl = document.getElementById('name');
 const picker = document.getElementById('file');
@@ -48,9 +50,13 @@ function selectionArgs(view) {
   return [view.state.doc.toString(), from, to];
 }
 
+// Enter: 코드 블록(들여쓰기 이어가기·닫는 울타리) → 목록·인용 이어쓰기 → 그냥 줄바꿈(v1처럼 자동 들여쓰기 없음).
+// 코드 블록인지는 구문 트리로 본다 — 편집기 트리가 문서 끝까지 있으면 그걸, 아직이면 codeEnter가 직접 파싱한다
 const enterCmd = view => {
-  const ed = listEnter(...selectionArgs(view));
-  if (!ed) return insertNewline(view); // 목록이 아니면 v1처럼 그냥 줄바꿈(자동 들여쓰기 없음)
+  const [text, s, e] = selectionArgs(view);
+  const tree = syntaxTreeAvailable(view.state) ? syntaxTree(view.state) : undefined;
+  const ed = codeEnter(text, s, e, tree) || listEnter(text, s, e);
+  if (!ed) return insertNewline(view);
   applyEdit(view, ed, true);
   return true;
 };
@@ -108,19 +114,44 @@ const theme = EditorView.theme({
   },
   '.cm-button:active': { backgroundImage: 'none', backgroundColor: 'var(--line)' },
   '.cm-panel.cm-search [name=close]': { color: 'var(--muted)' },
-  // 라이브 프리뷰 꾸밈
-  '.cm-lp-task': { margin: '0 0.4em 0 0', verticalAlign: 'middle', cursor: 'pointer', accentColor: 'var(--accent)' },
+  // 라이브 프리뷰 꾸밈. 할 일 칸은 뒤 공백까지 덮으니(v5) 오른쪽 여백이 공백 한 칸 몫까지 맡는다
+  '.cm-lp-task': { margin: '0 1em 0 0', verticalAlign: 'middle', cursor: 'pointer', accentColor: 'var(--accent)' },
   '.cm-lp-bullet': { color: 'var(--muted)' },
   '.cm-lp-hr': { display: 'inline-block', width: '100%', verticalAlign: 'middle', borderTop: '1px solid var(--line)' },
-  '.cm-lp-quote': { borderLeft: '3px solid var(--line)', paddingLeft: '10px' },
-  '.cm-lp-code': { backgroundColor: 'var(--code)' },
-  // 꺾인 줄 맞춤: 첫 줄은 제자리(기본 왼쪽 여백 6px, 인용 줄은 10px), 꺾인 줄만 --hang만큼 들어간다.
+  // 인용: 깊이(--depth)만큼 3px 막대를 13px 간격으로, 글은 깊이 × 13px에서
+  '.cm-lp-quote': {
+    paddingLeft: 'calc(var(--depth) * 13px)',
+    backgroundImage: 'repeating-linear-gradient(to right, var(--line) 0 3px, transparent 3px 13px)',
+    backgroundSize: 'calc(var(--depth) * 13px) 100%',
+    backgroundRepeat: 'no-repeat',
+  },
+  // 코드 상자: 줄마다 배경, 첫 줄·끝 줄 모서리를 둥글게. 울타리 줄은 작은 글씨로 상자의 위·아래 띠가 된다
+  '.cm-lp-code': { backgroundColor: 'var(--code)', paddingLeft: '12px', paddingRight: '12px' },
+  '.cm-lp-code-top': { borderTopLeftRadius: '6px', borderTopRightRadius: '6px' },
+  '.cm-lp-code-bottom': { borderBottomLeftRadius: '6px', borderBottomRightRadius: '6px' },
+  '.cm-lp-fence-line': { fontSize: '0.8em', color: 'var(--muted)' },
+  // 인용 안 코드: 막대 오른쪽부터 상자
+  '.cm-lp-quote.cm-lp-code': {
+    paddingLeft: 'calc(var(--depth) * 13px + 12px)',
+    backgroundColor: 'transparent',
+    backgroundImage: 'repeating-linear-gradient(to right, var(--line) 0 3px, transparent 3px 13px), linear-gradient(var(--code), var(--code))',
+    backgroundSize: 'calc(var(--depth) * 13px) 100%, 100% 100%',
+    backgroundPosition: '0 0, calc(var(--depth) * 13px - 4px) 0',
+    borderRadius: '0',
+  },
+  '.cm-lp-fence': { display: 'inline-flex', width: '100%', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' },
+  '.cm-lp-copy': { padding: '0 8px', lineHeight: '1.4', color: 'var(--muted)' },
+  '.cm-lp-copy:hover': { color: 'var(--fg)' },
+  // 꺾인 줄 맞춤: 첫 줄은 제자리(기본 왼쪽 여백 6px, 인용·코드 줄은 그 여백), 꺾인 줄만 --hang만큼 들어간다.
   // 안쪽 inline-block(접힘 표시 ⋯ 등)은 음수 들여쓰기를 물려받으면 글자가 상자 밖으로 나가서 0으로 되돌린다
   '.cm-line.cm-hang': { paddingLeft: 'calc(6px + var(--hang))', textIndent: 'calc(-1 * var(--hang))' },
-  '.cm-line.cm-lp-quote.cm-hang': { paddingLeft: 'calc(10px + var(--hang))' },
+  '.cm-line.cm-lp-quote.cm-hang': { paddingLeft: 'calc(var(--depth) * 13px + var(--hang))' },
+  '.cm-line.cm-lp-code.cm-hang': { paddingLeft: 'calc(12px + var(--hang))' },
+  '.cm-line.cm-lp-quote.cm-lp-code.cm-hang': { paddingLeft: 'calc(var(--depth) * 13px + 12px + var(--hang))' },
   '.cm-hang *': { textIndent: '0' },
   '.cm-searchMatch': { backgroundColor: 'var(--match)' },
   '.cm-searchMatch-selected': { backgroundColor: 'var(--accent)', color: 'var(--bg)' },
+  '.cm-searchMatch-selected [class^="tk-"]': { color: 'inherit' }, // 고른 찾기 결과는 색칠 대신 진한 바탕의 글자색
   '.cm-selectionBackground, &.cm-focused .cm-selectionBackground, ::selection': { backgroundColor: 'var(--select)' },
 });
 
@@ -147,6 +178,8 @@ const extensions = [
   EditorState.tabSize.of(2),
   EditorView.lineWrapping,
   wrapIndent,
+  // 색칠 칸을 문법 강조 칸 안쪽에 둔다(가장 높은 우선순위) — 바깥이면 인용 글의 흐린 색이 안쪽에서 이긴다. 라이브를 꺼도 남는다
+  Prec.highest(codeHighlight),
   placeholder('여기에 쓰세요.\n\nCtrl+O 열기 · Ctrl+S 저장 · Enter 목록 이어쓰기 · Tab 들여쓰기 · H1~H3 버튼으로 접기'),
   EditorView.contentAttributes.of({ spellcheck: 'false', autocapitalize: 'off', autocorrect: 'off', 'aria-label': '편집창' }),
   phrases,
@@ -220,6 +253,24 @@ function setLive(on) {
 function renderPreview() {
   // 안전: renderMarkdown이 HTML을 글자로 바꾸고 주소를 거른다
   preview.innerHTML = `<div class="page">${renderMarkdown(view.state.doc.toString())}</div>`;
+  // 코드 상자: 위 띠에 언어 이름과 [복사](편집 화면의 울타리 줄과 같은 자리)
+  for (const pre of preview.querySelectorAll('pre')) {
+    const box = document.createElement('div');
+    box.className = 'codebox';
+    const bar = document.createElement('div');
+    bar.className = 'codebar';
+    const lang = /(?:^|\s)language-(\S+)/.exec(pre.firstElementChild ? pre.firstElementChild.className : '');
+    const name = document.createElement('span');
+    name.textContent = lang ? lang[1] : '';
+    const copy = document.createElement('button');
+    copy.type = 'button';
+    copy.textContent = '복사';
+    copy.title = '코드 복사';
+    copy.addEventListener('click', () => copyInto(copy, pre.textContent));
+    bar.append(name, copy);
+    pre.replaceWith(box);
+    box.append(bar, pre);
+  }
   preview.scrollTop = 0;
 }
 

@@ -6,27 +6,47 @@ Each [release](https://github.com/jckim0721/LiteMD/releases) has one runnable fi
 
 ## Comparison
 
-| | v1.0 (build #0) | v2.0 (build #1) | v3.0 (build #2) | v4.0 (build #3) |
-|---|---|---|---|---|
-| Editor | textarea | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 |
-| File size | 16.5 KB | 370 KB | 381 KB | 386 KB |
-| External libraries | none | CodeMirror, Lezer (bundled in the file) | same | same |
-| Open, save, save as, unsaved mark | ✓ | ✓ | ✓ | ✓ |
-| List continuation, Tab indent | ✓ | ✓ | ✓ | ✓ |
-| Folder explorer | ✓ | ✓ | ✓ | ✓ |
-| Heading folding, fold to level | — | ✓ | ✓ | ✓ |
-| Find and replace (Ctrl+F) | browser's find | ✓ | ✓ | ✓ |
-| Basic highlighting (heading sizes, dimmed marks) | — | ✓ | ✓ | ✓ |
-| Live preview | — | — | ✓ | ✓ |
-| Reading view (Ctrl+E) | — | — | ✓ | ✓ |
-| Clickable checkboxes, Ctrl+click links | — | — | ✓ | ✓ |
-| Wrapped lines continue at the text start | — | — | — | ✓ |
-| Full width | — | — | — | ✓ |
-| Collapsible file tree | — | — | — | ✓ |
-| New file | — | — | — | ✓ |
-| Browser | Chrome/Edge 86+ | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended |
+| | v1.0 (build #0) | v2.0 (build #1) | v3.0 (build #2) | v4.0 (build #3) | v5.0 (build #5) |
+|---|---|---|---|---|---|
+| Editor | textarea | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 |
+| File size | 16.5 KB | 370 KB | 381 KB | 386 KB | 400 KB |
+| External libraries | none | CodeMirror, Lezer (bundled in the file) | same | same | same |
+| Open, save, save as, unsaved mark | ✓ | ✓ | ✓ | ✓ | ✓ |
+| List continuation, Tab indent | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Folder explorer | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Heading folding, fold to level | — | ✓ | ✓ | ✓ | ✓ |
+| Find and replace (Ctrl+F) | browser's find | ✓ | ✓ | ✓ | ✓ |
+| Basic highlighting (heading sizes, dimmed marks) | — | ✓ | ✓ | ✓ | ✓ |
+| Live preview | — | — | ✓ | ✓ | ✓ |
+| Reading view (Ctrl+E) | — | — | ✓ | ✓ | ✓ |
+| Clickable checkboxes, Ctrl+click links | — | — | ✓ | ✓ | ✓ |
+| Wrapped lines continue at the text start | — | — | — | ✓ | ✓ |
+| Full width | — | — | — | ✓ | ✓ |
+| Collapsible file tree | — | — | — | ✓ | ✓ |
+| New file | — | — | — | ✓ | ✓ |
+| Code block box, syntax colors, copy | — | — | — | — | ✓ |
+| Enter in code blocks (keeps indent, closing fence) | — | — | — | — | ✓ |
+| Quote continuation on Enter, nested quote bars | — | — | — | — | ✓ |
+| Checkboxes and bullets stay put as you move between lines | — | — | — | — | ✓ |
+| Browser | Chrome/Edge 86+ | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended |
 
 All versions: a single HTML file, zero network requests at runtime, no key interception during IME composition, CRLF files saved as CRLF, and in browsers without the File System Access API (phones, Firefox, Safari) files open through a file picker and save as downloads.
+
+## v5.0 — Build #5: code blocks, quotes, steady checkboxes (2026-10-22)
+
+**Changes since v4.0**
+
+- New: **code block box** — in live preview the ```` ``` ```` fence lines hide and the block shows as a rounded box, with the language name and [복사] (Copy) at the top right. Copy takes only the code, without fences or quote marks. Put the cursor on a fence line to see it raw. The reading view uses the same box
+- New: **syntax colors** — keywords, strings, comments and numbers for C, C++ (including C++Builder's `__fastcall` and friends), C#, Java, JavaScript, TypeScript, Python, SQL, shell, PowerShell, JSON, XML/HTML/XAML and YAML, in the editor (even with live preview off) and in the reading view. Simple text rules rather than a full parser, so it can occasionally be wrong
+- New: **Enter in code blocks** keeps the indentation of the line above and never continues `- ` or `>` as lists or quotes. Typing ```` ```js ```` and Enter also adds the closing ```` ``` ````
+- New: **quote continuation** — Enter on a `>` line starts the next line with `> ` (lists inside quotes, `> - `, continue too). Enter on an empty `> ` line removes one quote level. Tab indents after the `>`
+- New: **nested quotes** — `> >` shows two bars
+- Changed: **checkboxes and text no longer jump as you move between lines** — bullets `•`, checkboxes and quote marks `>` stay drawn even on the cursor line. Up to v4 the cursor line switched to the raw `- [ ] `, which pushed the text right, and long lines could wrap into more rows and push the lines below down. To see a mark raw, put the cursor right before it (Home). Backspace at the start of an item's text removes the mark
+- Fixed: in the reading view, code blocks inside lists and quotes showed only their first line (since v3)
+- Changed: a lone `- item` indented by a tab (4 columns) with no parent item is treated as a code block, as in Markdown (Enter doesn't continue it as a list). Sub-items under a parent item are unchanged
+- Size: 386 KB → 400 KB
+
+569 of 570 automated tests passed (Chrome, Edge), 1 skipped; manual check passed.
 
 ## v4.0 — Build #3: wrapped-line alignment, full width, collapsible tree, new file, heading sizes (2026-10-21)
 

@@ -5,12 +5,26 @@
 const LIST_RE = /^([ \t]*)(?:([-*+])|(\d{1,9})([.)]))([ \t]+)(\[[ xX]\](?:[ \t]+|$))?/;
 // 수평선(- - - · *** · ___)은 목록으로 보지 않는다
 const HR_RE = /^ {0,3}([-*_])(?:[ \t]*\1){2,}[ \t]*$/;
+// 인용 표시 하나: > 앞 공백 0~3칸, 뒤 공백 한 칸까지
+const QUOTE_MARK = / {0,3}>[ ]?/y;
 
 export function parseItem(line) {
   if (HR_RE.test(line)) return null;
   const m = LIST_RE.exec(line);
   if (!m) return null;
   return { indent: m[1], bullet: m[2] || '', num: m[3] || '', delim: m[4] || '', space: m[5], box: m[6] || '', end: m[0].length };
+}
+
+// 줄 앞 인용 표시(> 여러 개)와 그 마지막 표시가 시작하는 곳. 인용이 아니면 q는 ''
+export function quotePrefix(line) {
+  let end = 0;
+  let last = 0;
+  QUOTE_MARK.lastIndex = 0;
+  while (QUOTE_MARK.exec(line)) {
+    last = end;
+    end = QUOTE_MARK.lastIndex;
+  }
+  return { q: line.slice(0, end), last };
 }
 
 // 화면에서 꺾인 줄을 맞출 글 시작 위치(글자 수): 줄 앞 공백·탭 + 목록 표시·공백·할 일 칸. 없으면 0(수평선 포함)
@@ -37,21 +51,30 @@ function outdentWidth(line) {
   return n;
 }
 
+// 목록·인용 이어쓰기(v5부터 인용도). 인용 줄은 표시(> )를 떼고 나머지에 목록 규칙을 쓴 뒤 표시를 다시 붙인다
 export function listEnter(text, s, e) {
   const ls = lineStartOf(text, s);
   const line = text.slice(ls, lineEndOf(text, s));
-  const it = parseItem(line);
-  if (!it || s - ls < it.end) return null;
-  if (s === e && line.slice(it.end).trim() === '') {
-    // 빈 항목: 들여쓴 항목은 한 단계 내어쓰고, 최상위 항목은 기호를 지워 목록을 끝낸다
-    const n = it.indent ? outdentWidth(line) : line.length;
-    const at = it.indent ? s - n : ls;
-    return { from: ls, to: ls + n, insert: '', selStart: at, selEnd: at };
+  const { q, last } = quotePrefix(line);
+  const rest = line.slice(q.length);
+  const it = parseItem(rest);
+  const at = ls + q.length; // 인용 표시 뒤
+  if ((!q && !it) || s < at + (it ? it.end : 0)) return null; // 목록·인용이 아니거나 커서가 표시 앞·안
+  if (s === e && rest.slice(it ? it.end : 0).trim() === '') {
+    if (!it) {
+      // 빈 인용 줄: 인용 한 단계를 뗀다
+      const keep = q.slice(0, last);
+      return { from: ls, to: ls + line.length, insert: keep, selStart: ls + keep.length, selEnd: ls + keep.length };
+    }
+    // 빈 항목: 들여쓴 항목은 한 단계 내어쓰고, 최상위 항목은 기호를 지워 목록을 끝낸다(인용 표시는 남긴다)
+    const n = it.indent ? outdentWidth(rest) : rest.length;
+    const pos = it.indent ? s - n : at;
+    return { from: at, to: at + n, insert: '', selStart: pos, selEnd: pos };
   }
-  const marker = it.bullet || (Number(it.num) + 1) + it.delim;
-  const prefix = '\n' + it.indent + marker + it.space + (it.box ? '[ ] ' : '');
-  const at = s + prefix.length;
-  return { from: s, to: e, insert: prefix, selStart: at, selEnd: at };
+  const marker = it ? it.indent + (it.bullet || (Number(it.num) + 1) + it.delim) + it.space + (it.box ? '[ ] ' : '') : '';
+  const prefix = '\n' + q + marker;
+  const pos = s + prefix.length;
+  return { from: s, to: e, insert: prefix, selStart: pos, selEnd: pos };
 }
 
 // 선택이 걸친 줄 범위. 선택이 다음 줄 맨 앞에서 끝나면 그 줄은 뺀다.
@@ -61,14 +84,16 @@ function lineSpan(text, s, e) {
 }
 
 // 줄마다 fn을 적용하고, 줄 앞에서 늘거나 준 칸만큼 선택 위치를 보정한다. 바뀐 줄이 없으면 null.
+// 인용 줄은 표시(> ) 뒤에 적용한다(v5) — fn은 표시를 뗀 나머지를 받는다
 function mapLines(text, s, e, fn) {
   const { from, to } = lineSpan(text, s, e);
   const lines = text.slice(from, to).split('\n');
-  const shifts = []; // [원래 글에서 줄 시작 위치, 늘어난 칸 수(지웠으면 음수)]
+  const shifts = []; // [원래 글에서 바뀐 자리(줄 시작 또는 인용 표시 뒤), 늘어난 칸 수(지웠으면 음수)]
   let at = from;
   const out = lines.map(line => {
-    const next = fn(line, lines.length);
-    shifts.push([at, next.length - line.length]);
+    const { q } = quotePrefix(line);
+    const next = q + fn(line.slice(q.length), lines.length);
+    shifts.push([at + q.length, next.length - line.length]);
     at += line.length + 1;
     return next;
   });
@@ -77,7 +102,7 @@ function mapLines(text, s, e, fn) {
     let q = p;
     for (const [start, d] of shifts) {
       if (start > p) break;
-      q += d > 0 ? d : -Math.min(-d, p - start); // 지운 칸 안에 있던 위치는 줄 맨 앞으로
+      q += d > 0 ? d : -Math.min(-d, p - start); // 지운 칸 안에 있던 위치는 줄 맨 앞(인용 줄은 표시 뒤)으로
     }
     return q;
   };

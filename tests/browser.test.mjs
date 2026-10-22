@@ -501,8 +501,9 @@ for (const [label, exe] of BROWSERS) {
       assert.equal((await lineTexts())[0].slice(0, 4), '  • ');
     });
 
-    test('D02 같은 줄로 커서가 들어가 원문(- )이 드러나도 맞는다', async t => {
-      await b.eval('lite.view.dispatch({ selection: { anchor: 8 } })');
+    // v5부터 글머리는 커서 줄에서도 그린다 → 원문은 커서가 표시 바로 앞에 있을 때(v4는 글 안의 커서 anchor 8)
+    test('D02 커서가 표시 바로 앞으로 가 원문(- )이 드러나도 맞는다', async t => {
+      await b.eval('lite.view.dispatch({ selection: { anchor: 2 } })');
       await b.waitFor(`document.querySelector('.cm-content .cm-line').textContent.startsWith('  - ')`);
       const r = await aligned(1);
       t.diagnostic(JSON.stringify(r));
@@ -616,6 +617,286 @@ for (const [label, exe] of BROWSERS) {
       } finally {
         await b.send('Emulation.clearDeviceMetricsOverride');
       }
+    });
+
+    // ── 코드블럭(K)·인용(Q)·줄 앞 표시(J), v5 ──
+
+    const lineEls = () => b.eval(`[...document.querySelectorAll('.cm-content .cm-line')].map(l => ({ text: l.textContent, cls: l.className,
+      h: Math.round(l.getBoundingClientRect().height), font: getComputedStyle(l).fontSize, radius: getComputedStyle(l).borderTopLeftRadius }))`);
+    // 클립보드 흉내: 쓴 글은 __copied에. fail이면 클립보드 API도 execCommand도 실패
+    const stubClipboard = (fail = false) => b.eval(`(() => {
+      window.__copied = [];
+      Object.defineProperty(navigator, 'clipboard', { configurable: true, value: { async writeText(t) {
+        if (${fail}) throw new DOMException('막힘', 'NotAllowedError');
+        __copied.push(t);
+      } } });
+      if (${fail}) document.execCommand = () => false;
+      return true;
+    })()`);
+    const unstubClipboard = () => b.eval('delete navigator.clipboard; delete document.execCommand; 0');
+
+    test('K01 라이브 코드 상자: 울타리가 숨고 여는 줄에 언어·[복사], 위·아래 모서리 둥긂, 울타리 줄은 작은 글씨', async t => {
+      await setDoc('```js⏎const a = 1;⏎```⏎▮');
+      const ls = await lineEls();
+      t.diagnostic(JSON.stringify(ls.slice(0, 3)));
+      const fence = await b.eval(`(() => { const f = document.querySelector('.cm-lp-fence');
+        return f && { lang: f.querySelector('.cm-lp-lang').textContent, copy: f.querySelector('.cm-lp-copy').textContent }; })()`);
+      assert.deepEqual(fence, { lang: 'js', copy: '복사' });
+      assert.deepEqual(ls.slice(0, 3).map(l => l.text), ['js복사', 'const a = 1;', '']);
+      assert.ok(ls[0].cls.includes('cm-lp-code-top') && ls[0].cls.includes('cm-lp-fence-line') && ls[2].cls.includes('cm-lp-code-bottom'));
+      assert.equal(ls[0].radius, '6px');
+      assert.deepEqual([ls[0].font, ls[1].font, ls[2].font], ['12.8px', '16px', '12.8px']);
+    });
+
+    test('K02 커서가 여는 줄로 가면 원문, 코드 줄로 가면 다시 숨김 — 울타리 줄 높이는 그대로', async () => {
+      await setDoc('```js⏎const a = 1;⏎```⏎▮');
+      const before = (await lineEls())[0];
+      await b.eval('lite.view.dispatch({ selection: { anchor: 2 } })');
+      const raw = (await lineEls())[0];
+      await b.eval('lite.view.dispatch({ selection: { anchor: 8 } })');
+      const back = (await lineEls())[0];
+      assert.deepEqual([raw.text, back.text], ['```js', 'js복사']);
+      assert.ok(Math.abs(raw.h - before.h) <= 1 && Math.abs(back.h - before.h) <= 1, JSON.stringify([before.h, raw.h, back.h]));
+    });
+
+    const tokensIn = scope => b.eval(`Object.fromEntries(['k', 's', 'c', 'n'].map(t =>
+      [t, [...document.querySelectorAll('${scope} .tk-' + t)].map(e => e.textContent)]))`);
+
+    test('K03 편집 화면 색칠: 키워드·문자열·주석·숫자, [라이브]를 꺼도 남는다', async () => {
+      await setDoc('```js⏎const a = "x" + 1; // 끝⏎```⏎▮');
+      const want = { k: ['const'], s: ['"x"'], c: ['// 끝'], n: ['1'] };
+      assert.deepEqual(await tokensIn('.cm-content'), want);
+      await b.click('#live');
+      try {
+        assert.deepEqual(await tokensIn('.cm-content'), want);
+      } finally {
+        await b.click('#live');
+      }
+    });
+
+    for (const scheme of ['light', 'dark']) {
+      test(`K04 색칠 대비(${scheme}): 네 색 모두 코드 배경에 4.5:1 이상 — 편집·읽기`, async t => {
+        await b.send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: scheme }] });
+        try {
+          await setDoc('```js⏎const a = "x" + 1; // 끝⏎```⏎▮');
+          const edit = await b.eval(`[...document.querySelectorAll('.cm-content [class^="tk-"]')].map(el => [el.className, __ratio(el)])`);
+          await toggleReading();
+          const read = await b.eval(`[...document.querySelectorAll('#preview [class^="tk-"]')].map(el => [el.className, __ratio(el)])`);
+          await toggleReading();
+          t.diagnostic(JSON.stringify({ edit, read }));
+          assert.equal(edit.length, 4);
+          assert.equal(read.length, 4);
+          assert.deepEqual([...edit, ...read].filter(([, r]) => r < 4.5), []);
+        } finally {
+          await b.send('Emulation.setEmulatedMedia', { features: [] });
+        }
+      });
+    }
+
+    test('K05 라이브 [복사]: 코드 글만(인용 표시 뺌), 버튼 "복사됨", 커서·포커스 그대로, 울타리 줄은 원문으로 안 바뀜', async () => {
+      await setDoc('> ```js⏎> let a = 1;⏎>   b⏎> ```⏎▮');
+      await stubClipboard();
+      try {
+        await b.click('.cm-lp-copy');
+        await b.waitFor('__copied.length === 1');
+        const r = await b.eval(`({ copied: __copied[0], label: document.querySelector('.cm-lp-copy').textContent,
+          first: document.querySelector('.cm-content .cm-line').textContent })`);
+        assert.deepEqual(r, { copied: 'let a = 1;\n  b', label: '복사됨', first: 'js복사됨' });
+        assert.equal(await screen(), '> ```js⏎> let a = 1;⏎>   b⏎> ```⏎▮');
+        assert.equal(await focused(), true);
+      } finally {
+        await unstubClipboard();
+      }
+    });
+
+    test('K06 읽기 화면 코드 상자: 위 띠에 언어 이름·[복사], 색칠, [복사]는 코드 글을', async () => {
+      await setDoc('```js⏎const a = 1;⏎```⏎▮');
+      await stubClipboard();
+      await toggleReading();
+      try {
+        const r = await b.eval(`(() => { const box = document.querySelector('#preview .codebox');
+          return { lang: box.querySelector('.codebar span').textContent, button: box.querySelector('.codebar button').textContent,
+            k: box.querySelector('pre code .tk-k').textContent }; })()`);
+        assert.deepEqual(r, { lang: 'js', button: '복사', k: 'const' });
+        await b.click('#preview .codebar button');
+        await b.waitFor('__copied.length === 1');
+        assert.deepEqual(await b.eval(`[__copied[0], document.querySelector('#preview .codebar button').textContent]`), ['const a = 1;', '복사됨']);
+      } finally {
+        await toggleReading();
+        await unstubClipboard();
+      }
+    });
+
+    test('K07 ```cpp + Enter: 닫는 울타리가 생기고, Ctrl+Z 한 번이면 Enter 전으로', async () => {
+      await setDoc('```cpp▮');
+      await b.press('Enter');
+      assert.equal(await screen(), '```cpp⏎▮⏎```');
+      await type('int a;');
+      await b.press('Enter');
+      assert.equal(await screen(), '```cpp⏎int a;⏎▮⏎```');
+      await b.press('z', { ctrl: true });
+      assert.equal(await screen(), '```cpp⏎int a;▮⏎```');
+    });
+
+    test('K08 코드 주석 안에서 한글 조합: 겹침 없이 써지고, 조합이 끝나면 칠해진다', async t => {
+      await setDoc('```js⏎// 주석 ▮⏎```');
+      await b.send('Input.imeSetComposition', { text: '한', selectionStart: 1, selectionEnd: 1 });
+      const during = await value();
+      await type('한');
+      await b.waitFor(`[...document.querySelectorAll('.cm-content .tk-c')].map(e => e.textContent).join('') === '// 주석 한'`).catch(() => {});
+      t.diagnostic(`조합 중: ${JSON.stringify(during)}`);
+      assert.equal(await value(), '```js\n// 주석 한\n```');
+      assert.equal(await b.eval(`[...document.querySelectorAll('.cm-content .tk-c')].map(e => e.textContent).join('')`), '// 주석 한');
+    });
+
+    test('K09 클립보드를 못 쓰면 버튼에 "복사 못 함", 오류 없음', async () => {
+      await setDoc('```js⏎x⏎```⏎▮');
+      await stubClipboard(true);
+      try {
+        await b.click('.cm-lp-copy');
+        await b.waitFor(`document.querySelector('.cm-lp-copy').textContent !== '복사'`);
+        assert.equal(await b.eval(`document.querySelector('.cm-lp-copy').textContent`), '복사 못 함');
+      } finally {
+        await unstubClipboard();
+      }
+    });
+
+    test('K10 읽기 화면: 목록·인용 안 코드블럭도 모든 줄이 보인다', async () => {
+      await setDoc('- 항목⏎  ```py⏎  def f():⏎      pass⏎  ```⏎⏎> ```js⏎> a⏎> b⏎> ```⏎▮');
+      await toggleReading();
+      const codes = await b.eval(`[...document.querySelectorAll('#preview pre')].map(p => p.textContent)`);
+      await toggleReading();
+      assert.deepEqual(codes, ['def f():\n    pass', 'a\nb']);
+    });
+
+    test('K11 인용 안 코드도 색칠: 보이는 글자색이 맨 바깥 코드와 같다(인용의 흐린 색이 덮지 않는다)', async t => {
+      await setDoc('```sql⏎SELECT 1⏎```⏎⏎> ```sql⏎> SELECT 1⏎> ```⏎▮');
+      const colors = await b.eval(`[...document.querySelectorAll('.cm-content .cm-line')].filter(l => l.textContent.includes('SELECT'))
+        .map(l => { const w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT, n => (n.textContent.includes('SELECT') ? 1 : 3));
+          return getComputedStyle(w.nextNode().parentElement).color; })`);
+      const muted = await b.eval(`(() => { const s = document.createElement('span'); s.style.color = 'var(--muted)'; document.body.append(s);
+        const c = getComputedStyle(s).color; s.remove(); return c; })()`);
+      t.diagnostic(JSON.stringify({ colors, muted }));
+      assert.equal(colors.length, 2);
+      assert.equal(colors[1], colors[0]);
+      assert.notEqual(colors[1], muted);
+    });
+
+    // 줄 왼쪽 끝에서 글 시작까지(px)
+    const textStarts = () => b.eval(`[...document.querySelectorAll('.cm-content .cm-line')].map(l => {
+      const w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT, n => (n.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP));
+      const node = w.nextNode();
+      if (!node) return null;
+      const r = document.createRange();
+      r.setStart(node, node.textContent.search(/\\S/));
+      r.setEnd(node, node.textContent.search(/\\S/) + 1);
+      return Math.round(r.getBoundingClientRect().left - l.getBoundingClientRect().left);
+    })`);
+
+    test('Q01 겹친 인용: 깊이만큼 막대, 글은 13px·26px에서', async t => {
+      await setDoc('> 하나⏎> > 둘⏎▮');
+      const r = await b.eval(`[...document.querySelectorAll('.cm-content .cm-line')].slice(0, 2).map(l =>
+        [getComputedStyle(l).backgroundSize, getComputedStyle(l).backgroundImage.includes('gradient')])`);
+      const starts = (await textStarts()).slice(0, 2);
+      t.diagnostic(JSON.stringify({ r, starts }));
+      assert.deepEqual(r, [['13px 100%', true], ['26px 100%', true]]);
+      assert.deepEqual(starts, [13, 26]);
+    });
+
+    test('Q02 인용 Enter 뒤 바로 한글 조합: > 는 내내 숨김, 확정 뒤 Enter로 또 이어쓴다', async () => {
+      await setDoc('> 회의▮');
+      await b.press('Enter');
+      assert.equal(await screen(), '> 회의⏎> ▮');
+      await b.send('Input.imeSetComposition', { text: '가', selectionStart: 1, selectionEnd: 1 });
+      const during = (await lineTexts())[1];
+      await b.press('Process');
+      await type('가');
+      await b.press('Enter');
+      assert.equal(await screen(), '> 회의⏎> 가⏎> ▮');
+      assert.equal(during, '가');
+      assert.deepEqual((await lineTexts()).slice(0, 2), ['회의', '가']);
+    });
+
+    test('J01 긴 하위 할 일에서 줄마다 커서를 둬도 체크박스 위치·줄 높이가 그대로(v4는 꺾인 줄 수가 바뀌며 아래가 밀렸다)', async t => {
+      await b.send('Emulation.setDeviceMetricsOverride', { width: 1000, height: 3200, deviceScaleFactor: 1, mobile: false });
+      try {
+        const lines = [];
+        for (let k = 20; k <= 60; k++) lines.push('  - [ ] ' + '가'.repeat(k));
+        await setDoc(lines.join('⏎') + '⏎▮');
+        const snap = () => b.eval(`[...document.querySelectorAll('.cm-content .cm-line')].map(l => {
+          const r = l.getBoundingClientRect(), c = l.querySelector('.cm-lp-task');
+          return Math.round(r.top) + ' ' + Math.round(r.height) + ' ' + (c ? Math.round(c.getBoundingClientRect().left) + ',' + Math.round(c.getBoundingClientRect().top) : '-');
+        }).join('|')`);
+        await settle();
+        await settle();
+        const base = await snap();
+        const moved = [];
+        for (let n = 1; n <= lines.length; n++) {
+          await b.eval(`lite.view.dispatch({ selection: { anchor: lite.view.state.doc.line(${n}).to } })`);
+          await settle();
+          await settle();
+          if ((await snap()) !== base) moved.push(n);
+        }
+        t.diagnostic(`줄 ${lines.length}개, 바뀐 줄: ${JSON.stringify(moved)}`);
+        assert.deepEqual(moved, []);
+      } finally {
+        await b.send('Emulation.clearDeviceMetricsOverride');
+      }
+    });
+
+    test('J02 할 일 줄에서 Home이면 그 줄만 원문(- [ ] ), End면 다시 체크박스', async () => {
+      await setDoc('  - [ ] 할 일▮⏎- [ ] 다음');
+      await b.press('Home');
+      const home = (await lineTexts()).slice(0, 2);
+      await b.press('End');
+      const end = (await lineTexts()).slice(0, 2);
+      assert.deepEqual({ home, end }, { home: ['  - [ ] 할 일', '다음'], end: ['  할 일', '다음'] });
+    });
+
+    test('J03 할 일 Enter 뒤 바로 한글 조합: 새 줄 체크박스가 그대로이고 그 옆에 써진다', async () => {
+      await setDoc('- [ ] 할 일▮');
+      await b.press('Enter');
+      assert.equal(await screen(), '- [ ] 할 일⏎- [ ] ▮');
+      const boxes = () => b.eval(`document.querySelectorAll('.cm-content .cm-line:nth-child(2) .cm-lp-task').length`);
+      const before = await boxes();
+      await b.send('Input.imeSetComposition', { text: '가', selectionStart: 1, selectionEnd: 1 });
+      const during = { boxes: await boxes(), text: (await lineTexts())[1] };
+      await b.press('Process');
+      await type('가');
+      assert.deepEqual({ before, during, after: await boxes(), text: (await lineTexts())[1] },
+        { before: 1, during: { boxes: 1, text: '가' }, after: 1, text: '가' });
+      assert.equal(await value(), '- [ ] 할 일\n- [ ] 가');
+    });
+
+    test('J04 글 첫머리 Backspace는 표시째 지운다(할 일·글머리·인용), Ctrl+Z로 돌아온다', async () => {
+      for (const [doc, after, back] of [
+        ['- [ ] ▮할 일', '▮할 일', '- [ ] 할 일'], ['  - ▮하위', '  ▮하위', '  - 하위'], ['> > ▮인용', '> ▮인용', '> > 인용'],
+      ]) {
+        await setDoc(doc);
+        await b.press('Backspace');
+        assert.equal(await screen(), after);
+        await b.press('z', { ctrl: true });
+        assert.equal(await value(), back);
+      }
+    });
+
+    test('J05 여러 줄 인용에서 ↓로 내려가도 글 시작 위치가 그대로', async t => {
+      await setDoc('▮> 첫 줄⏎> 둘째 줄⏎> 셋째 줄⏎끝');
+      await b.press('End');
+      const base = await textStarts();
+      const seen = [];
+      for (let i = 0; i < 3; i++) {
+        await b.press('ArrowDown');
+        seen.push(await textStarts());
+      }
+      t.diagnostic(JSON.stringify({ base, seen }));
+      assert.deepEqual(seen.map(s => s.slice(0, 3)), [base.slice(0, 3), base.slice(0, 3), base.slice(0, 3)]);
+    });
+
+    test('J06 커서가 있는 줄의 체크박스를 누르면 토글되고 커서는 그대로', async () => {
+      await setDoc('- [ ] 할 일▮');
+      await b.click('.cm-lp-task');
+      assert.equal(await screen(), '- [x] 할 일▮');
     });
 
     // ── 폴더 탐색기(X) ──
