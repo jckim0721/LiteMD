@@ -899,6 +899,122 @@ for (const [label, exe] of BROWSERS) {
       assert.equal(await screen(), '- [x] 할 일▮');
     });
 
+    // ── 탭 칸(v5.1) — 줄 앞부분 탭은 폭을 고정해 그린다. 꺾인 줄 맞춤의 padding을 따라 탭 폭이 바뀌어 출렁였다 ──
+
+    // 줄마다 '위 높이 체크박스x 글시작x'(줄 왼쪽 끝 기준 px, 없으면 -)
+    const layout = () => b.eval(`[...document.querySelectorAll('.cm-content .cm-line')].map(l => {
+      const r = l.getBoundingClientRect(), c = l.querySelector('.cm-lp-task');
+      const w = document.createTreeWalker(l, NodeFilter.SHOW_TEXT, n => (n.textContent.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_SKIP));
+      const node = w.nextNode();
+      let text = '-';
+      if (node) {
+        const g = document.createRange();
+        g.setStart(node, node.textContent.search(/\\S/));
+        g.setEnd(node, node.textContent.search(/\\S/) + 1);
+        text = Math.round(g.getBoundingClientRect().left - r.left);
+      }
+      return [Math.round(r.top), Math.round(r.height), c ? Math.round(c.getBoundingClientRect().left - r.left) : '-', text].join(' ');
+    })`);
+    // 커서를 1~count줄 끝에 차례로 두며 화면이 바뀐 줄 번호(커서가 문서 끝일 때와 비교)
+    const movedLines = async count => {
+      await settle();
+      await settle();
+      const base = await layout();
+      const moved = new Set();
+      for (let n = 1; n <= count; n++) {
+        await b.eval(`lite.view.dispatch({ selection: { anchor: lite.view.state.doc.line(${n}).to } })`);
+        await settle();
+        await settle();
+        (await layout()).forEach((v, i) => v !== base[i] && moved.add(i + 1));
+      }
+      return { base, moved };
+    };
+    const wide = () => b.send('Emulation.setDeviceMetricsOverride', { width: 900, height: 1200, deviceScaleFactor: 1, mobile: false });
+    const unwide = () => b.send('Emulation.clearDeviceMetricsOverride');
+
+    test('J07 탭·공백이 섞인 같은 단계 할 일: 줄을 오가도 체크박스·줄 위치가 그대로, 탭 하나 = 공백 2칸 자리', async t => {
+      await wide();
+      try {
+        await setDoc(['- [ ] 부모', '⇥- [ ] 탭 ' + '가'.repeat(60), '  - [ ] 공백2', '  ⇥- [ ] 공백2+탭', '    - [ ] 공백4', '- [ ] 다음']
+          .join('⏎') + '⏎▮');
+        const { base, moved } = await movedLines(6);
+        await b.eval(`lite.view.dispatch({ selection: { anchor: lite.view.state.doc.line(1).to } })`);
+        for (let i = 0; i < 6; i++) { // ↓로도
+          await b.press('ArrowDown');
+          await settle();
+          await settle();
+          (await layout()).forEach((v, k) => v !== base[k] && moved.add(k + 1));
+        }
+        const box = base.map(v => v.split(' ')[2]);
+        t.diagnostic(JSON.stringify({ base, moved: [...moved] }));
+        assert.deepEqual([...moved], []);
+        assert.equal(box[1], box[2], '탭 줄 = 공백 2칸 줄');
+        assert.equal(box[3], box[4], '공백2+탭 줄 = 공백 4칸 줄');
+      } finally {
+        await unwide();
+      }
+    });
+
+    test('J08 꺾인 긴 탭 줄: 둘째 줄이 첫 줄 글 시작에 맞는다', async t => {
+      await wide();
+      try {
+        await setDoc('- [ ] 부모⏎⇥- [ ] 탭 ' + '가'.repeat(60) + '⏎▮');
+        await settle();
+        await settle();
+        const r = await b.eval(`(() => {
+          const l = document.querySelectorAll('.cm-content .cm-line')[1];
+          const first = document.createTreeWalker(l, NodeFilter.SHOW_TEXT, n => (n.textContent.trim() ? 1 : 3)).nextNode();
+          const t = document.createRange(), i = first.textContent.search(/\\S/);
+          t.setStart(first, i);
+          t.setEnd(first, i + 1);
+          const g = document.createRange();
+          g.selectNodeContents(document.createTreeWalker(l, NodeFilter.SHOW_TEXT, n => (n.textContent.includes('가가') ? 1 : 3)).nextNode());
+          const rows = [...g.getClientRects()];
+          return { rows: rows.length, text: Math.round(t.getBoundingClientRect().left), wrapped: Math.round(rows[rows.length - 1].left) };
+        })()`);
+        t.diagnostic(JSON.stringify(r));
+        assert.ok(r.rows >= 2, '꺾여야 한다');
+        assert.ok(Math.abs(r.wrapped - r.text) <= 1, '꺾인 줄 = 글 시작');
+      } finally {
+        await unwide();
+      }
+    });
+
+    test('J09 탭으로 들여쓴 할 일 Enter 뒤 바로 한글 조합: 새 줄 탭 칸·체크박스가 그대로이고 그 옆에 써진다', async () => {
+      await setDoc('- [ ] 부모⏎⇥- [ ] 할 일▮');
+      await b.press('Enter');
+      assert.equal(await screen(), '- [ ] 부모⏎⇥- [ ] 할 일⏎⇥- [ ] ▮');
+      const parts = () => b.eval(`(() => { const l = document.querySelectorAll('.cm-content .cm-line')[2];
+        return [l.querySelectorAll('.cm-tab').length, l.querySelectorAll('.cm-lp-task').length].join(' '); })()`);
+      const before = await parts();
+      await b.send('Input.imeSetComposition', { text: '가', selectionStart: 1, selectionEnd: 1 });
+      const during = { parts: await parts(), text: (await lineTexts())[2] };
+      await b.press('Process');
+      await type('가');
+      assert.deepEqual({ before, during, after: await parts(), text: (await lineTexts())[2] },
+        { before: '1 1', during: { parts: '1 1', text: '\t가' }, after: '1 1', text: '\t가' });
+      assert.equal(await value(), '- [ ] 부모\n\t- [ ] 할 일\n\t- [ ] 가');
+    });
+
+    test('J10 라이브를 꺼도(원문) 탭 줄이 출렁이지 않는다 — 할 일·번호 목록', async t => {
+      await wide();
+      try {
+        await setDoc(['- [ ] 부모', '⇥- [ ] 할 일 ' + '가'.repeat(60), '1. 번호', '⇥1. 하위 번호 ' + '나'.repeat(60), '끝'].join('⏎') + '⏎▮');
+        const live = await movedLines(5);
+        await b.click('#live');
+        let raw;
+        try {
+          raw = await movedLines(5);
+        } finally {
+          await b.click('#live');
+        }
+        t.diagnostic(JSON.stringify({ live: [...live.moved], raw: [...raw.moved], rawBase: raw.base }));
+        assert.deepEqual({ live: [...live.moved], raw: [...raw.moved] }, { live: [], raw: [] });
+      } finally {
+        await unwide();
+      }
+    });
+
     // ── 폴더 탐색기(X) ──
 
     // 가짜 폴더: 숨길 것(.obsidian, 사진.png)과 정렬을 확인할 이름들. stubFiles() 다음에 부른다

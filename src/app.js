@@ -175,7 +175,7 @@ const extensions = [
   syntaxHighlighting(highlight),
   search({ top: false }),
   indentUnit.of('  '),
-  EditorState.tabSize.of(2),
+  EditorState.tabSize.of(2), // 탭 폭 2칸(v1). 줄 앞부분 탭 칸(v5.1, wrapindent.js)도 이 폭
   EditorView.lineWrapping,
   wrapIndent,
   // 색칠 칸을 문법 강조 칸 안쪽에 둔다(가장 높은 우선순위) — 바깥이면 인용 글의 흐린 색이 안쪽에서 이긴다. 라이브를 꺼도 남는다
