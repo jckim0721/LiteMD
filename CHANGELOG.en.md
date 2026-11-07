@@ -6,31 +6,43 @@ Each [release](https://github.com/jckim0721/LiteMD/releases) has one runnable fi
 
 ## Comparison
 
-| | v1.0 (build #0) | v2.0 (build #1) | v3.0 (build #2) | v4.0 (build #3) | v5.0 (build #5) |
-|---|---|---|---|---|---|
-| Editor | textarea | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 |
-| File size | 16.5 KB | 370 KB | 381 KB | 386 KB | 400 KB |
-| External libraries | none | CodeMirror, Lezer (bundled in the file) | same | same | same |
-| Open, save, save as, unsaved mark | ✓ | ✓ | ✓ | ✓ | ✓ |
-| List continuation, Tab indent | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Folder explorer | ✓ | ✓ | ✓ | ✓ | ✓ |
-| Heading folding, fold to level | — | ✓ | ✓ | ✓ | ✓ |
-| Find and replace (Ctrl+F) | browser's find | ✓ | ✓ | ✓ | ✓ |
-| Basic highlighting (heading sizes, dimmed marks) | — | ✓ | ✓ | ✓ | ✓ |
-| Live preview | — | — | ✓ | ✓ | ✓ |
-| Reading view (Ctrl+E) | — | — | ✓ | ✓ | ✓ |
-| Clickable checkboxes, Ctrl+click links | — | — | ✓ | ✓ | ✓ |
-| Wrapped lines continue at the text start | — | — | — | ✓ | ✓ |
-| Full width | — | — | — | ✓ | ✓ |
-| Collapsible file tree | — | — | — | ✓ | ✓ |
-| New file | — | — | — | ✓ | ✓ |
-| Code block box, syntax colors, copy | — | — | — | — | ✓ |
-| Enter in code blocks (keeps indent, closing fence) | — | — | — | — | ✓ |
-| Quote continuation on Enter, nested quote bars | — | — | — | — | ✓ |
-| Checkboxes and bullets stay put as you move between lines | — | — | — | — | ✓ |
-| Browser | Chrome/Edge 86+ | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended |
+| | v1.0 (build #0) | v2.0 (build #1) | v3.0 (build #2) | v4.0 (build #3) | v5.0 (build #5) | v5.1 (build #5 fix) |
+|---|---|---|---|---|---|---|
+| Editor | textarea | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 | CodeMirror 6 |
+| File size | 16.5 KB | 370 KB | 381 KB | 386 KB | 400 KB | 401 KB |
+| External libraries | none | CodeMirror, Lezer (bundled in the file) | same | same | same | same |
+| Open, save, save as, unsaved mark | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| List continuation, Tab indent | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Folder explorer | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Heading folding, fold to level | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Find and replace (Ctrl+F) | browser's find | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Basic highlighting (heading sizes, dimmed marks) | — | ✓ | ✓ | ✓ | ✓ | ✓ |
+| Live preview | — | — | ✓ | ✓ | ✓ | ✓ |
+| Reading view (Ctrl+E) | — | — | ✓ | ✓ | ✓ | ✓ |
+| Clickable checkboxes, Ctrl+click links | — | — | ✓ | ✓ | ✓ | ✓ |
+| Wrapped lines continue at the text start | — | — | — | ✓ | ✓ | ✓ |
+| Full width | — | — | — | ✓ | ✓ | ✓ |
+| Collapsible file tree | — | — | — | ✓ | ✓ | ✓ |
+| New file | — | — | — | ✓ | ✓ | ✓ |
+| Code block box, syntax colors, copy | — | — | — | — | ✓ | ✓ |
+| Enter in code blocks (keeps indent, closing fence) | — | — | — | — | ✓ | ✓ |
+| Quote continuation on Enter, nested quote bars | — | — | — | — | ✓ | ✓ |
+| Checkboxes and bullets stay put as you move between lines | — | — | — | — | ✓ | ✓ |
+| Tab-indented lines stay put, Tab on a tab-indented line adds a tab | — | — | — | — | — | ✓ |
+| Browser | Chrome/Edge 86+ | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended | Chrome/Edge 110+ recommended |
 
 All versions: a single HTML file, zero network requests at runtime, no key interception during IME composition, CRLF files saved as CRLF, and in browsers without the File System Access API (phones, Firefox, Safari) files open through a file picker and save as downloads.
+
+## v5.1 — Build #5 fix: steady tab-indented lines (2026-11-07)
+
+**Changes since v5.0**
+
+- Fixed: **tab-indented lines shifted left and right every time the cursor moved** (since v4). Tabs at the start of a line are now drawn as fixed-width slots, so one tab always takes the room of two spaces, on the cursor line too and with live preview off
+- Changed: **Tab on a tab-indented line adds a tab.** Until now it put two spaces at the very start of the line (`2 spaces + tab`), which indented in the editor but not in the reading view. Tab, Shift+Tab and Enter on an empty sub-item now add and remove at the end of the indentation: one tab if it ends with a tab, otherwise two spaces. Lines indented only with spaces behave as before
+- Unchanged: the editor's tab width stays 2; the reading view sets levels by Markdown rules (a tab = 4 columns)
+- Size: 400 KB → 401 KB
+
+627 of 628 automated tests passed (Chrome, Edge), 1 skipped; manual check passed.
 
 ## v5.0 — Build #5: code blocks, quotes, steady checkboxes (2026-10-22)
 

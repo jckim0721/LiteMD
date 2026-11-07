@@ -63,7 +63,7 @@ Open the address above in Chrome or Edge, or download a release file and open it
 
 ## Offline and air-gapped use
 
-Copy one file: the one attached to each [release](https://github.com/jckim0721/LiteMD/releases) (`LiteMD-v5.0.html` and so on, identical to `index.html`). The editor engine and the icon are inside it and it makes zero network requests, so no internet is needed. No install, no server.
+Copy one file: the one attached to each [release](https://github.com/jckim0721/LiteMD/releases) (`LiteMD-v5.1.html` and so on, identical to `index.html`). The editor engine and the icon are inside it and it makes zero network requests, so no internet is needed. No install, no server.
 
 - Browser: Chrome or Edge 110+ recommended (check with `edge://version`)
 - If company policy blocks the file-access API, opening falls back to a file picker and saving to a download, automatically
@@ -73,7 +73,8 @@ Copy one file: the one attached to each [release](https://github.com/jckim0721/L
 
 Each [release](https://github.com/jckim0721/LiteMD/releases) has a single runnable file attached. Differences between versions: [CHANGELOG.en.md](CHANGELOG.en.md).
 
-- **v5.0 (current):** code blocks (rounded box, syntax colors, copy, Enter keeps the indentation and adds the closing fence), quotes (Enter continues `>`, nested bars), checkboxes and bullets stay put as you move between lines
+- **v5.1 (current):** tab-indented lines stay put as you move the cursor, and Tab on them adds a tab (so the reading view indents too)
+- **v5.0:** code blocks (rounded box, syntax colors, copy, Enter keeps the indentation and adds the closing fence), quotes (Enter continues `>`, nested bars), checkboxes and bullets stay put as you move between lines
 - **v4.0:** wrapped lines align with the text start, full width, collapsible file tree, new file, larger heading sizes
 - **v3.0:** live preview, reading view (Ctrl+E), checkboxes, Ctrl+click links
 - **v2.0:** CodeMirror 6 — heading folding, fold to level, find, basic highlighting. Lists with sub-items and code blocks fold too (Markdown's built-in folding)
