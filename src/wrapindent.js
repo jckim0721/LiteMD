@@ -1,9 +1,11 @@
 // 꺾인 줄 맞춤 — 들여쓴 줄·목록 항목이 화면 끝에서 꺾이면, 꺾인 부분을 그 줄의 글 시작 위치에 맞춘다(보기만 바꾼다).
 // 글 시작까지 몇 글자인지는 hangPrefix(순수)가 정하고, 그 폭은 화면에서 잰다: 라이브의 체크박스는 원문 `- [ ]`보다 좁아서
 // 글자 수(ch)로 맞추면 어긋난다. 잰 폭은 padding-left + 같은 크기의 음수 text-indent로 건다 → 첫 줄은 제자리, 꺾인 줄만 들어간다.
+// 줄 앞부분의 탭은 폭을 고정한 칸으로 그린다(v5.1): CSS 탭은 padding 안쪽부터 탭 자리를 세서, 맞춤 값이 바뀌면 탭 폭도 바뀌고
+// 다시 재면 맞춤 값이 또 바뀌었다(커서를 옮길 때마다 출렁). 맞춤은 라이브를 꺼도 걸리니 탭 칸도 늘 그린다.
 import { StateEffect } from '@codemirror/state';
-import { Decoration, ViewPlugin } from '@codemirror/view';
-import { hangPrefix } from './logic.js';
+import { Decoration, ViewPlugin, WidgetType } from '@codemirror/view';
+import { hangPrefix, prefixTabs } from './logic.js';
 
 const remeasured = StateEffect.define(); // 값: 새로 잰 [줄 시작 오프셋, px][]
 
@@ -36,7 +38,7 @@ const decorate = widths => Decoration.set(
   widths.map(([p, w]) => Decoration.line({ class: 'cm-hang', attributes: { style: `--hang: ${w}px` } }).range(p)),
 );
 
-export const wrapIndent = ViewPlugin.fromClass(
+const hang = ViewPlugin.fromClass(
   class {
     constructor(view) {
       this.widths = [];
@@ -82,3 +84,52 @@ export const wrapIndent = ViewPlugin.fromClass(
   },
   { decorations: p => p.decorations },
 );
+
+// 탭 칸: 칸 수만큼 폭을 고정한 빈칸(CodeMirror 기본 테마의 .cm-tab — inline-block, 넘치면 숨김). 폭은 맞춤이 없을 때 CSS 탭과 같다
+class TabCell extends WidgetType {
+  constructor(cols) {
+    super();
+    this.cols = cols;
+  }
+  eq(other) {
+    return other.cols === this.cols;
+  }
+  toDOM() {
+    const span = document.createElement('span');
+    span.className = 'cm-tab';
+    span.textContent = '\t';
+    span.style.width = `${this.cols}ch`;
+    return span;
+  }
+  ignoreEvent() {
+    return false;
+  }
+}
+
+// 화면 범위 줄마다 앞부분 탭 → 탭 칸. 라이브의 줄 앞 표시가 덮는 탭(`-⇥[ ]`)은 CodeMirror가 먼저 시작한 표시를 그린다
+function tabCells(view) {
+  const { doc, tabSize } = view.state;
+  const cells = [];
+  for (let pos = view.viewport.from; pos <= view.viewport.to;) {
+    const line = doc.lineAt(pos);
+    for (const [i, cols] of prefixTabs(line.text, tabSize)) {
+      cells.push(Decoration.replace({ widget: new TabCell(cols) }).range(line.from + i, line.from + i + 1));
+    }
+    pos = line.to + 1;
+  }
+  return Decoration.set(cells);
+}
+
+const tabs = ViewPlugin.fromClass(
+  class {
+    constructor(view) {
+      this.decorations = tabCells(view);
+    }
+    update(u) {
+      if (u.docChanged || u.viewportChanged) this.decorations = tabCells(u.view);
+    }
+  },
+  { decorations: p => p.decorations },
+);
+
+export const wrapIndent = [hang, tabs];

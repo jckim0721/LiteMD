@@ -27,6 +27,7 @@ export const vectors = [
   { id: 'E22', key: 'Enter', before: '-항목▮', after: null, note: '기호 뒤 공백 없음' },
   { id: 'E23', key: 'Enter', before: '- - -▮', after: null, note: '수평선은 목록 아님' },
   { id: 'E24', key: 'Enter', before: '**굵게** 시작▮', after: null, note: '**는 목록 아님' },
+  { id: 'E25', key: 'Enter', before: '- 상위⏎  ⇥- ▮', after: '- 상위⏎  - ▮', note: '빈 하위 항목: 끝의 탭을 뺀다(v5.1)' },
 
   { id: 'T01', key: 'Tab', before: '- 항▮목', after: '  - 항▮목', note: '커서 위치와 상관없이 줄 전체' },
   { id: 'T02', key: 'Tab', before: '▮- 첫째⏎- 둘째▮', after: '  ▮- 첫째⏎  - 둘째▮', note: '여러 줄 선택' },
@@ -35,6 +36,11 @@ export const vectors = [
   { id: 'T05', key: 'Tab', before: '▮', after: '  ▮', note: '빈 문서' },
   { id: 'T06', key: 'Tab', before: '▮⏎- 항목', after: '  ▮⏎- 항목', note: '맨 앞 빈 줄(오프셋 0 경계)' },
   { id: 'T07', key: 'Tab', before: '▮⏎⏎▮', after: null, note: '여러 줄이 모두 빈 줄이면 그대로' },
+  // v5.1 — 들여쓰기 끝에 넣는다. 탭으로 끝나면 탭(공백을 탭 앞에 붙이면 마크다운 깊이가 그대로라 읽기 화면에서 안 들어갔다)
+  { id: 'T08', key: 'Tab', before: '- 상위⏎⇥- 하▮위', after: '- 상위⏎⇥⇥- 하▮위', note: '탭으로 끝나면 탭' },
+  { id: 'T09', key: 'Tab', before: '- 상위⏎  ⇥- 섞▮임', after: '- 상위⏎  ⇥⇥- 섞▮임', note: '공백2+탭도 탭으로 끝난다' },
+  { id: 'T10', key: 'Tab', before: '- 상위⏎⇥  - 섞▮임', after: '- 상위⏎⇥    - 섞▮임', note: '공백으로 끝나면 공백 2칸(들여쓰기 끝에)' },
+  { id: 'T11', key: 'Tab', before: '▮- 상위⏎⇥- 하위▮', after: '  ▮- 상위⏎⇥⇥- 하위▮', note: '여러 줄: 줄마다 제 들여쓰기대로' },
 
   { id: 'S01', key: 'Shift+Tab', before: '  - 항▮목', after: '- 항▮목', note: '공백 2칸 제거' },
   { id: 'S02', key: 'Shift+Tab', before: '- 항목▮', after: null, note: '지울 게 없으면 그대로' },
@@ -43,6 +49,11 @@ export const vectors = [
   { id: 'S05', key: 'Shift+Tab', before: '    - 네 칸▮', after: '  - 네 칸▮', note: '한 번에 2칸만' },
   { id: 'S06', key: 'Shift+Tab', before: ' ▮ - 커서가 들여쓰기 안', after: '▮- 커서가 들여쓰기 안', note: '지운 칸 안의 커서는 줄 맨 앞으로' },
   { id: 'S07', key: 'Shift+Tab', before: '▮  - 첫째⏎- 둘째⏎    - 셋째▮', after: '▮- 첫째⏎- 둘째⏎  - 셋째▮', note: '여러 줄: 줄마다 따로' },
+  // v5.1 — 들여쓰기 끝에서 뺀다. 탭으로 끝나면 탭 1개, 아니면 끝의 공백 최대 2칸
+  { id: 'S08', key: 'Shift+Tab', before: '- 상위⏎  ⇥- 섞▮임', after: '- 상위⏎  - 섞▮임', note: '끝의 탭을 뺀다(v5까지는 앞 공백 2칸 → 같은 깊이)' },
+  { id: 'S09', key: 'Shift+Tab', before: '- 상위⏎⇥  - 섞▮임', after: '- 상위⏎⇥- 섞▮임', note: '끝의 공백 2칸' },
+  { id: 'S10', key: 'Shift+Tab', before: '- 상위⏎⇥- 중간⏎⇥⇥- 하▮위', after: '- 상위⏎⇥- 중간⏎⇥- 하▮위', note: '탭 두 개 → 하나' },
+  { id: 'S11', key: 'Shift+Tab', before: '- 상위⏎⇥ ▮ - 가', after: '- 상위⏎⇥▮- 가', note: '지운 칸 안의 커서는 지운 자리로' },
 
   // v5 코드 블록 안 Enter·인용 Enter·인용 Tab — 볼트 `LiteMD_v5_작업계획서` §6 CE·QE·QT 표와 같아야 한다
   { id: 'CE01', key: 'Enter', before: '```js▮', after: '```js⏎▮⏎```', note: '닫히지 않은 블록: 닫는 울타리' },
@@ -90,6 +101,7 @@ export const vectors = [
   { id: 'QT04', key: 'Tab', before: '▮> 가⏎> 나▮', after: '▮>   가⏎>   나▮', note: '여러 인용 줄, 표시 앞 커서는 그대로' },
   { id: 'QT05', key: 'Tab', before: '▮> 가⏎>⏎> 나▮', after: '▮>   가⏎>⏎>   나▮', note: '여러 줄일 때 빈 인용 줄은 건너뜀' },
   { id: 'QT06', key: 'Shift+Tab', before: '>  ▮ - 가', after: '> ▮- 가', note: '지운 칸 안의 커서는 인용 표시 뒤로' },
+  { id: 'QT07', key: 'Tab', before: '> - 상위⏎> ⇥- 하▮위', after: '> - 상위⏎> ⇥⇥- 하▮위', note: '인용 안: 표시 뒤 들여쓰기 끝에(v5.1)' },
 ];
 
 // 보조 함수 — call은 logic 블록 안에서 그대로 실행되는 식이다
@@ -178,6 +190,17 @@ export const liveVectors = [
   { id: 'LP36', doc: '▮  - 하위', expect: '  • 하위', note: '들여쓰기 앞은 표시에 안 닿음' },
   { id: 'LP37', doc: '> - [ ] 할 일▮', expect: '☐ 할 일', note: '인용 안 할 일' },
   { id: 'LP38', doc: '- ▮', expect: '• ', note: '빈 항목' },
+  // v5.1 줄 앞부분 탭 칸 — 볼트 `LiteMD_v5.1_작업계획서` §6. · = 탭 칸 한 칸, ⇥ = 그대로 둔 탭
+  { id: 'LP39', doc: '- [ ] 부모⏎⇥- [ ] 탭 하위⏎▮', expect: '☐ 부모 ⏎ ··☐ 탭 하위 ⏎ ', note: '줄 앞 탭은 2칸짜리 칸' },
+  { id: 'LP40', doc: '- [ ] 부모⏎⇥- [ ] 탭▮ 하위', expect: '☐ 부모 ⏎ ··☐ 탭 하위', note: '커서 줄에서도' },
+  { id: 'LP41', doc: '- 부모⏎  ⇥- 섞임⏎▮', expect: '• 부모 ⏎   ··• 섞임 ⏎ ', note: '공백 2칸 뒤 탭 = 2칸' },
+  { id: 'LP42', doc: '- 부모⏎ ⇥- 홀수⏎▮', expect: '• 부모 ⏎  ·• 홀수 ⏎ ', note: '공백 1칸 뒤 탭 = 1칸' },
+  { id: 'LP43', doc: '```⏎⇥a⏎```⏎▮', expect: '⟨⟩ ⏎ ··a ⏎  ⏎ ', note: '코드 줄 앞 탭도' },
+  { id: 'LP44', doc: '- 가⇥나⏎▮', expect: '• 가⇥나 ⏎ ', note: '글 가운데 탭은 그대로' },
+  { id: 'LP45', doc: '- 부모⏎▮⇥- [ ] 할 일', expect: '• 부모 ⏎ ··☐ 할 일', note: '탭 앞 커서: 표시에 안 닿음' },
+  { id: 'LP46', doc: '- 부모⏎⇥▮- [ ] 할 일', expect: '• 부모 ⏎ ··- [ ] 할 일', note: '표시에 닿으면 표시만 원문, 탭 칸은 그대로' },
+  { id: 'LP47', doc: '-⇥[ ] 할 일⏎▮', expect: '☐ 할 일 ⏎ ', note: '할 일 표시 안의 탭은 표시가 덮는다' },
+  { id: 'LP48', doc: '- [ ]⇥할 일⏎▮', expect: '☐ ·할 일 ⏎ ', note: '할 일 칸 뒤 탭(5칸 뒤 → 1칸)' },
 ];
 
 // v5 코드 상자 줄 모양 — 볼트 `LiteMD_v5_작업계획서` §6 CB 표. f 울타리 줄, c 내용 줄, ^ 위 모서리, _ 아래 모서리, - 코드 아님
@@ -217,6 +240,20 @@ export const hangVectors = [
   { id: 'HP13', line: '# 제목', expect: 0, note: '헤딩' },
   { id: 'HP14', line: '-   여러 칸', expect: 4, note: '표시 뒤 공백 여러 개' },
   { id: 'HP15', line: '  ⇥섞임', expect: 3, note: '공백·탭이 섞인 들여쓰기' },
+];
+
+// v5.1 줄 앞부분 탭 칸 — 볼트 `LiteMD_v5.1_작업계획서` §6 TB 표. prefixTabs(줄, 2)의 '위치:칸 수'를 띄어 쓴 것, 없으면 '없음'
+export const tabVectors = [
+  { id: 'TB01', line: '⇥- [ ] 할 일', expect: '0:2', note: '줄 맨 앞 탭 = 2칸' },
+  { id: 'TB02', line: '  ⇥- 섞임', expect: '2:2', note: '공백 2칸 뒤' },
+  { id: 'TB03', line: ' ⇥- 홀수', expect: '1:1', note: '공백 1칸 뒤 = 1칸' },
+  { id: 'TB04', line: '⇥⇥- 두 단계', expect: '0:2 1:2', note: '탭 둘' },
+  { id: 'TB05', line: '⇥1. 번호', expect: '0:2', note: '번호 목록' },
+  { id: 'TB06', line: '⇥코드', expect: '0:2', note: '목록 아닌 들여쓴 줄' },
+  { id: 'TB07', line: '- [ ]⇥할 일', expect: '5:1', note: '할 일 칸 뒤' },
+  { id: 'TB08', line: '- 가⇥나', expect: '없음', note: '글 가운데 탭' },
+  { id: 'TB09', line: '⇥', expect: '0:2', note: '탭만 있는 줄' },
+  { id: 'TB10', line: '> ⇥- 인용', expect: '없음', note: '인용 줄은 맞춤 대상이 아니다' },
 ];
 
 // v5 색칠 토큰 — 볼트 `LiteMD_v5_작업계획서` §6 HL 표와 같아야 한다.

@@ -13,7 +13,7 @@ import { codeTokens } from '../src/code.js';
 import { codeEnter } from '../src/codeblock.js';
 import {
   vectors, helpers, headingVectors, levelDoc, levelVectors, liveVectors, hangVectors, renderVectors, urlVectors, parse, show,
-  highlightVectors, boxVectors, depthVectors,
+  highlightVectors, boxVectors, depthVectors, tabVectors,
 } from './vectors.mjs';
 
 // Enter는 앱과 같은 순서: 코드 블록 → 목록·인용 → (둘 다 null이면) 그냥 줄바꿈
@@ -68,28 +68,37 @@ for (const v of levelVectors) {
 // ── 라이브 프리뷰: 줄마다 보이는 글 ──
 
 // 글머리·할 일 칸은 뒤 공백까지 덮는다(v5) → 위젯이 공백 몫까지 보여 준다
+// 탭 칸(v5.1)은 칸 수만큼 ·, 그대로 둔 탭은 ⇥
 const SHOWN = {
   hide: () => '', bullet: () => '• ', hr: () => '───', task: s => (s.checked ? '☑ ' : '☐ '), fence: s => `⟨${s.lang}⟩`,
+  tab: s => '·'.repeat(s.cols),
 };
+// 라이브 화면 = 라이브 꾸밈 + 줄 앞부분 탭 칸(v5.1, 꺾인 줄 맞춤 쪽 플러그인). 표시가 덮는 탭은 표시가 그린다
+// (CodeMirror는 먼저 시작한 칸을 그리고, 그 안에서 시작하는 칸은 건너뛴다)
 function visibleText(state) {
   const { spans } = previewSpans(state);
   const lines = [];
   for (let n = 1; n <= state.doc.lines; n++) {
     const line = state.doc.line(n);
+    const own = spans.filter(x => x.from >= line.from && x.to <= line.to);
+    const tabs = logic.prefixTabs(line.text, state.tabSize)
+      .map(([i, cols]) => ({ from: line.from + i, to: line.from + i + 1, kind: 'tab', cols }))
+      .filter(t => !own.some(x => x.from <= t.from && t.from < x.to));
     let out = '';
     let pos = line.from;
-    for (const s of spans.filter(x => x.from >= line.from && x.to <= line.to)) {
+    for (const s of [...own, ...tabs].sort((a, b) => a.from - b.from)) {
       out += state.doc.sliceString(pos, s.from) + SHOWN[s.kind](s);
       pos = s.to;
     }
     lines.push(out + state.doc.sliceString(pos, line.to));
   }
-  return lines.join(' ⏎ ');
+  return lines.join(' ⏎ ').replaceAll('\t', '⇥');
 }
 
 const liveState = display => {
   const { text, s, e } = parse(display.includes('▮') ? display : display + '▮');
-  return EditorState.create({ doc: text, selection: EditorSelection.single(s, e), extensions: [markdownLanguage] });
+  const extensions = [markdownLanguage, EditorState.tabSize.of(2)]; // 탭 폭은 앱과 같게(v5.1 탭 칸)
+  return EditorState.create({ doc: text, selection: EditorSelection.single(s, e), extensions });
 };
 
 for (const v of liveVectors) {
@@ -127,6 +136,13 @@ for (const v of depthVectors) {
 for (const v of hangVectors) {
   test(`${v.id} 글 시작 — ${v.note}`, () => {
     assert.equal(logic.hangPrefix(v.line.replaceAll('⇥', '\t')), v.expect);
+  });
+}
+
+for (const v of tabVectors) {
+  test(`${v.id} 탭 칸 — ${v.note}`, () => {
+    const cells = logic.prefixTabs(v.line.replaceAll('⇥', '\t'), 2).map(([i, cols]) => `${i}:${cols}`);
+    assert.equal(cells.join(' ') || '없음', v.expect);
   });
 }
 

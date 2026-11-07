@@ -31,7 +31,29 @@ export function quotePrefix(line) {
 export function hangPrefix(line) {
   const it = parseItem(line);
   if (it) return it.end;
-  return HR_RE.test(line) ? 0 : /^[ \t]*/.exec(line)[0].length;
+  return HR_RE.test(line) ? 0 : indentOf(line).length;
+}
+
+// 줄 앞부분(hangPrefix)의 탭마다 [글자 위치, 칸 수](v5.1). 칸 수 = 다음 탭 자리(size칸마다)까지, 줄 맨 앞부터 센다.
+// 화면은 이 칸 수로 폭을 고정해 그린다 — CSS 탭은 꺾인 줄 맞춤의 padding을 따라 폭이 바뀌어 잴 때마다 출렁였다
+export function prefixTabs(line, size) {
+  const out = [];
+  const n = hangPrefix(line);
+  for (let i = 0, col = 0; i < n; i++) {
+    if (line[i] !== '\t') {
+      col++;
+      continue;
+    }
+    const cols = size - (col % size);
+    out.push([i, cols]);
+    col += cols;
+  }
+  return out;
+}
+
+// 줄 앞 들여쓰기(공백·탭)
+function indentOf(line) {
+  return /^[ \t]*/.exec(line)[0];
 }
 
 function lineStartOf(text, pos) {
@@ -43,12 +65,17 @@ function lineEndOf(text, pos) {
   return i < 0 ? text.length : i;
 }
 
-// 줄 앞에서 한 번에 지울 칸 수: 탭 1개 또는 공백 최대 2칸
-function outdentWidth(line) {
-  if (line[0] === '\t') return 1;
-  let n = 0;
-  while (n < 2 && line[n] === ' ') n++;
-  return n;
+// 들여쓰기 한 단계(v5.1): 들여쓰기 끝에 넣고 끝에서 뺀다. 탭으로 끝나면 탭 1개, 아니면 공백 2칸(빼기는 끝의 공백 최대 2칸).
+// v5까지는 줄 맨 앞에서 넣고 뺐는데, 탭 앞의 공백은 탭에 묻혀서 마크다운 깊이(탭 = 4칸 단위)가 그대로였다
+const indentUnit = indent => (indent.endsWith('\t') ? '\t' : '  ');
+
+// 들여쓰기 안에서 지울 칸 [시작, 끝)
+function outdentRange(indent) {
+  const end = indent.length;
+  if (indent.endsWith('\t')) return [end - 1, end];
+  let start = end;
+  while (start > end - 2 && indent[start - 1] === ' ') start--;
+  return [start, end];
 }
 
 // 목록·인용 이어쓰기(v5부터 인용도). 인용 줄은 표시(> )를 떼고 나머지에 목록 규칙을 쓴 뒤 표시를 다시 붙인다
@@ -66,10 +93,10 @@ export function listEnter(text, s, e) {
       const keep = q.slice(0, last);
       return { from: ls, to: ls + line.length, insert: keep, selStart: ls + keep.length, selEnd: ls + keep.length };
     }
-    // 빈 항목: 들여쓴 항목은 한 단계 내어쓰고, 최상위 항목은 기호를 지워 목록을 끝낸다(인용 표시는 남긴다)
-    const n = it.indent ? outdentWidth(rest) : rest.length;
-    const pos = it.indent ? s - n : at;
-    return { from: at, to: at + n, insert: '', selStart: pos, selEnd: pos };
+    // 빈 항목: 들여쓴 항목은 한 단계 내어쓰고(Shift+Tab과 같은 칸), 최상위 항목은 기호를 지워 목록을 끝낸다(인용 표시는 남긴다)
+    if (!it.indent) return { from: at, to: at + rest.length, insert: '', selStart: at, selEnd: at };
+    const [a, b] = outdentRange(it.indent);
+    return { from: at + a, to: at + b, insert: '', selStart: s - (b - a), selEnd: s - (b - a) };
   }
   const marker = it ? it.indent + (it.bullet || (Number(it.num) + 1) + it.delim) + it.space + (it.box ? '[ ] ' : '') : '';
   const prefix = '\n' + q + marker;
@@ -83,19 +110,22 @@ function lineSpan(text, s, e) {
   return { from: lineStartOf(text, s), to: lineEndOf(text, last) };
 }
 
-// 줄마다 fn을 적용하고, 줄 앞에서 늘거나 준 칸만큼 선택 위치를 보정한다. 바뀐 줄이 없으면 null.
+// 줄마다 fn을 적용하고, 늘거나 준 칸만큼 선택 위치를 보정한다. 바뀐 줄이 없으면 null.
 // 인용 줄은 표시(> ) 뒤에 적용한다(v5) — fn은 표시를 뗀 나머지를 받는다
 function mapLines(text, s, e, fn) {
   const { from, to } = lineSpan(text, s, e);
   const lines = text.slice(from, to).split('\n');
-  const shifts = []; // [원래 글에서 바뀐 자리(줄 시작 또는 인용 표시 뒤), 늘어난 칸 수(지웠으면 음수)]
+  const shifts = []; // [원래 글에서 바뀐 자리, 늘어난 칸 수(지웠으면 음수)]
   let at = from;
   const out = lines.map(line => {
     const { q } = quotePrefix(line);
-    const next = q + fn(line.slice(q.length), lines.length);
-    shifts.push([at + q.length, next.length - line.length]);
+    const rest = line.slice(q.length);
+    const next = fn(rest, lines.length);
+    let k = 0; // 바뀐 자리 = 앞에서부터 같은 글자 수(들여쓰기 끝, v5.1)
+    while (k < rest.length && rest[k] === next[k]) k++;
+    shifts.push([at + q.length + k, next.length - rest.length]);
     at += line.length + 1;
-    return next;
+    return q + next;
   });
   if (shifts.every(([, d]) => d === 0)) return null;
   const move = p => {
@@ -110,11 +140,18 @@ function mapLines(text, s, e, fn) {
 }
 
 export function indentLines(text, s, e) {
-  return mapLines(text, s, e, (line, count) => (count > 1 && line === '' ? line : '  ' + line));
+  return mapLines(text, s, e, (line, count) => {
+    if (count > 1 && line === '') return line;
+    const indent = indentOf(line);
+    return indent + indentUnit(indent) + line.slice(indent.length);
+  });
 }
 
 export function outdentLines(text, s, e) {
-  return mapLines(text, s, e, line => line.slice(outdentWidth(line)));
+  return mapLines(text, s, e, line => {
+    const [a, b] = outdentRange(indentOf(line));
+    return line.slice(0, a) + line.slice(b);
+  });
 }
 
 // 앞뒤 공통 글자를 잘라 실제로 바뀐 부분만 남긴다(Ctrl+Z 뒤 커서가 덜 튄다). 서로게이트 쌍은 쪼개지 않는다.
